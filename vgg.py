@@ -64,10 +64,8 @@ def vgg_arg_scope(weight_decay=0.0005):
 
 
 def vgg_16(inputs,
-           num_classes=1000,
            is_training=True,
            dropout_keep_prob=0.5,
-           spatial_squeeze=True,
            scope='vgg_16',
            fc_conv_padding='VALID'):
   

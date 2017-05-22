@@ -13,7 +13,7 @@ sys.path.append('utils/')
 import fitness_vectorized as fv
 
 NUM_TEST = 10
-NUM_TRAIN = 640
+NUM_TRAIN = 128
 NUM_VAL = 128
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(64, 64, 3)
@@ -56,7 +56,7 @@ DATA_DIR = "data/"
 # print 'this is ', perm
 # print data['train'][0][perm],  data['train'][1][perm]
 
-def getData(puzzle_height, puzzle_width, batch_size=-1):
+def getData(puzzle_height, puzzle_width, batch_size=-1, use_cnn=False):
 	'''
 	returns data : such that data['val'] = (x_val, y_val, val_seq_len)
 							data['train'] = (x_train, y_train, train_seq_len)
@@ -65,10 +65,10 @@ def getData(puzzle_height, puzzle_width, batch_size=-1):
 							# seq_len = [batch_size, ] # for each image in that batch, the number of pieces it is cut int
 	'''
 	X_flat = generateImageData(NUM_DATA, puzzle_height, puzzle_width, dims=DIMS)
-	data = prepareDataset(X_flat)
+	data = prepareDataset(X_flat, keep_shape = use_cnn)
 	return data
 
-def prepareDataset(X_flat):
+def prepareDataset(X_flat, keep_shape = True):
 	'''
 	Splits and preprocessed dimension-formatted data into 
 	train, test and validation data. 
@@ -88,12 +88,13 @@ def prepareDataset(X_flat):
 
 	X_train, X_val, X_test = np.split(xs, [NUM_TRAIN, NUM_TRAIN + NUM_VAL])
 	y_train, y_val, y_test = np.split(ys, [NUM_TRAIN, NUM_TRAIN + NUM_VAL])
-
-	print("Prepared Flattened Dataset!")
-	X_train = X_train.reshape(NUM_TRAIN, L, -1)
-	X_val = X_val.reshape(NUM_VAL, L, -1)
-	print X_test.shape
-	X_test = X_test.reshape(NUM_TEST, L, -1)
+	
+	if not keep_shape:
+		print("Prepared Flattened Dataset!")
+		X_train = X_train.reshape(NUM_TRAIN, L, -1)
+		X_val = X_val.reshape(NUM_VAL, L, -1)
+		print X_test.shape
+		X_test = X_test.reshape(NUM_TEST, L, -1)
 
 	# Create one-hot vectors of these arrays. 
 	y_train_onehot = np.where(y_train[:,:,np.newaxis] == np.arange(L), 1, 0)

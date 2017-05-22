@@ -7,10 +7,12 @@ from datagenerator import getData
 
 class DataGenerator(object):
 
-    def __init__(self, puzzle_height, puzzle_width, input_dim):
+    def __init__(self, puzzle_height, puzzle_width, input_dim, use_cnn, image_dim):
         self.puzzle_width = puzzle_width
         self.puzzle_height = puzzle_height
-        self.data = getData(puzzle_height, puzzle_width)
+        self.use_cnn = use_cnn
+        self.image_dim = image_dim
+        self.data = getData(puzzle_height, puzzle_width, use_cnn=self.use_cnn)
         self.data['train'] = (self.data['train'][0], np.argmax( self.data['train'][1] , axis = 2), self.data['train'][2])
         self.data['val'] = (self.data['val'][0], np.argmax(self.data['val'][1] , axis=2), self.data['val'][2])
         self.input_dim = input_dim
@@ -29,10 +31,11 @@ class DataGenerator(object):
 
         # Ordered sequence where one hot vector encodes position in the input array
         writer_outputs_batch = []
+        size = [batch_size, self.input_dim] if not self.use_cnn else [batch_size, self.image_dim, self.image_dim, 3]
         for _ in range(N):
-            reader_input_batch.append(np.zeros([batch_size, self.input_dim]))
+            reader_input_batch.append(np.zeros(size))
         for _ in range(N + 1):
-            decoder_input_batch.append(np.zeros([batch_size, self.input_dim]))
+            decoder_input_batch.append(np.zeros(size))
             writer_outputs_batch.append(np.zeros([batch_size, N + 1]))
 
         mode_string = 'train' if train_mode else 'val'
@@ -58,6 +61,7 @@ class DataGenerator(object):
 
             # Points to the stop symbol
             writer_outputs_batch[N][b, 0] = 1.0
+
         return reader_input_batch, decoder_input_batch, writer_outputs_batch
     
 

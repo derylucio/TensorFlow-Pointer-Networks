@@ -22,24 +22,27 @@ from tensorflow.python.ops import variable_scope as vs
 
 class  CNN_FeatureExtractor(object):
 	def __init__(self):
-		self.checkpoints_dir = "../ckpts"
+		self.checkpoints_dir = "ckpts"
 		self.ckpt_name = 'vgg_16.ckpt' 
 
-	def getCNNFEatures(self, input_tensor, fc_dim, out_dim, fc_initializer, get_inputfn = False):
+	def getCNNFEatures(self, input_tensor, fc_dim, out_dim, fc_initializer):
 		graph = tf.Graph()
 
 		with graph.as_default():
 			#vgg = tf.contrib.slim.nets.vgg
 
 			
+			# if get_inputfn:
+			# 	with slim.arg_scope(vgg.vgg_arg_scope(), reuse=True):
+			# 		logits, end_points = vgg.vgg_16(input_tensor, is_training=False)	 # might want to change this once we decide to finetune
+			# else:
 			with slim.arg_scope(vgg.vgg_arg_scope()):
-				logits, end_points = vgg.vgg_16(input_tensor, is_training=False)	 # might want to change this once we decide to finetune
-
+				logits, end_points = vgg.vgg_16(input_tensor, is_training=False)
   
-	        if get_inputfn:
-		        model_path = os.path.join(self.checkpoints_dir, self.ckpt_name)
-		        variables_to_restore = tf.contrib.framework.get_variables_to_restore()
-		        init_fn = tf.contrib.framework.assign_from_checkpoint_fn(model_path, variables_to_restore)
+	        model_path = os.path.join(self.checkpoints_dir, self.ckpt_name)
+	        variables_to_restore = tf.contrib.framework.get_variables_to_restore()
+	        variables_to_restore = [var for var in variables_to_restore if 'vgg_16' in var.name] # only use vgg things!
+	        init_fn = tf.contrib.framework.assign_from_checkpoint_fn(model_path, variables_to_restore)
 
 
 	        pool_result = end_points['vgg_16/pool5']
@@ -50,10 +53,7 @@ class  CNN_FeatureExtractor(object):
 	        	b = vs.get_variable("b", [out_dim], initializer=fc_initializer)
 	        	output = tf.nn.relu(tf.matmul(flattened, W) + b)
 	        
-	        if get_inputfn:
-	    		return init_fn, output
-	    	else:
-	    		return output
+	        return init_fn, output
 
     
     

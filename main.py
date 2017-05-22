@@ -16,28 +16,27 @@ from cnn import CNN_FeatureExtractor
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_integer('batch_size', 32, 'Batch size.  ')
+flags.DEFINE_integer('batch_size', 32, 'Batch size')
 flags.DEFINE_integer('max_steps', 9, 'Maximum number of pieces in puzzle')
-flags.DEFINE_integer('rnn_size', 200, 'RNN size.  ')
+flags.DEFINE_integer('rnn_size', 200, 'RNN size.  ') # HYPER-PARAMS
 flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
 flags.DEFINE_integer('puzzle_height', 3, 'Puzzle Height')
 flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
 flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate')
-flags.DEFINE_integer('inter_dim', 4096, 'Dimension of intermediate state - if using fully connected' )
-flags.DEFINE_integer('fc_dim', 512, 'Dimension of final pre-encoder state - if using fully connected')
-flags.DEFINE_bool('use_cnn', False, 'Use CNN for creating image embeddings')
-flags.DEFINE_integer('input_dim', 12288, 'Dimensionality of input images - use if flattened')
-flags.DEFINE_integer('vgg_dim', 2048, 'Dimensionality flattnened vgg pool feature')
-flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training')
+flags.DEFINE_integer('inter_dim', 4096, 'Dimension of intermediate state - if using fully connected' ) # HYPER-PARAMS
+flags.DEFINE_integer('fc_dim', 512, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
+flags.DEFINE_integer('input_dim', 12288, 'Dimensionality of input images - use if flattened') 
+flags.DEFINE_integer('vgg_dim', 2048, 'Dimensionality flattnened vgg pool feature') 
+flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPER-PARAMS
 flags.DEFINE_integer('nb_epochs', 1000, 'the number of epochs to run')
-flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate')
-flags.DEFINE_integer('lr_decay_period', 20, 'the number of iterations after which to decay learning rate.')
-flags.DEFINE_float('reg', 5e-4, 'regularization on model parameters')
-flags.DEFINE_bool('use_cnn', False, 'Whether to use CNN or MLP for input dimensionality reduction')
+flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HYPER-PARAMS
+flags.DEFINE_integer('lr_decay_period', 50, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
+flags.DEFINE_float('reg', 5e-3, 'regularization on model parameters') # HYPER-PARAMS
+flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
 
 class PointerNetwork(object):
     def __init__(self, max_len, input_size, size, num_layers, max_gradient_norm, batch_size, learning_rate,
-                 learning_rate_decay_factor, use_cnn, inter_dim, fc_dim, use_cnn, image_dim, vgg_dim):
+                 learning_rate_decay_factor, inter_dim, fc_dim, use_cnn, image_dim, vgg_dim):
         """Create the network. A simplified network that handles only sorting.
         
         Args:
@@ -76,7 +75,7 @@ class PointerNetwork(object):
         for i in range(max_len + 1):
             size = [batch_size, input_size] if not use_cnn else [batch_size, image_dim, image_dim, 3]
             self.decoder_inputs.append(tf.placeholder(
-                tf.float32, [batch_size, input_size], name="DecoderInput%d" % i))
+                tf.float32, size, name="DecoderInput%d" % i))
             self.decoder_targets.append(tf.placeholder(
                 tf.float32, [batch_size, max_len + 1], name="DecoderTarget%d" % i))  # one hot
             self.target_weights.append(tf.placeholder(
@@ -87,19 +86,19 @@ class PointerNetwork(object):
         if use_cnn:
             # Encoder 
             cnn_f_extractor = CNN_FeatureExtractor()
-            stacked_ins = tf.stack(self.encoder_inputs)
-            stacked_ins = tf.reshape(static_rnn, [-1, image_dim, image_dim, 3])
-            features = cnn_f_extractor.getCNNFEatures(stacked_ins, vgg_dim, fc_dim,self.init)
-            features = tf.reshape(features, [-1, batch_size, fc_dim])
-            self.proj_encoder_inputs = tf.unstack(features)
-
-            # Decoder
-            stacked_ins = tf.stack(self.decoder_inputs)
-            stacked_ins = tf.reshape(static_rnn, [-1, image_dim, image_dim, 3])
-            inputfn, features = cnn_f_extractor.getCNNFEatures(stacked_ins, vgg_dim, fc_dim,self.init, get_inputfn = True)
+            all_inps = []
+            num_encoder = len(self.encoder_inputs)
+            all_inps.extend(self.encoder_inputs)
+            all_inps.extend(self.decoder_inputs)
+            stacked_ins = tf.stack(all_inps)
+            stacked_ins = tf.reshape(stacked_ins, [-1, image_dim, image_dim, 3])
+            inputfn, features = cnn_f_extractor.getCNNFEatures(stacked_ins, vgg_dim, fc_dim, self.init)
             self.inputfn = inputfn
             features = tf.reshape(features, [-1, batch_size, fc_dim])
-            self.proj_decoder_inputs = tf.unstack(features)
+            all_out = tf.unstack(features)
+            self.proj_encoder_inputs = all_out[:num_encoder]
+            self.proj_decoder_inputs = all_out[num_encoder:]
+
         else:
             with vs.variable_scope("projector_scope"):
                 W1 = vs.get_variable("W1", [input_size, inter_dim])
@@ -186,9 +185,9 @@ class PointerNetwork(object):
         reg_loss = 0
         var_list = []
 
-        for tf_var in tf.trainable_variable():
+        for tf_var in tf.trainable_variables():
             if not ('Bias' in tf_var.name):
-                if use_cnn and not('vgg_16' in tf_var.name)
+                if use_cnn and not('vgg_16' in tf_var.name):
                     var_list.append(tf_var)
                     reg_loss += tf.nn.l2_loss(tf_var)
                 else:
@@ -276,7 +275,7 @@ if __name__ == "__main__":
     # TODO: replace other with params
     pointer_network = PointerNetwork(FLAGS.max_steps, FLAGS.input_dim, FLAGS.rnn_size,
                                      1, 5, FLAGS.batch_size, FLAGS.learning_rate, \
-                                    FLAGS.lr_decay, FLAGS.use_cnn, FLAGS.inter_dim, \
+                                    FLAGS.lr_decay, FLAGS.inter_dim, \
                                     FLAGS.fc_dim, FLAGS.use_cnn, FLAGS.image_dim, FLAGS.vgg_dim)
-    dataset = DataGenerator(FLAGS.puzzle_width, FLAGS.puzzle_width, FLAGS.input_dim)
+    dataset = DataGenerator(FLAGS.puzzle_width, FLAGS.puzzle_width, FLAGS.input_dim, FLAGS.use_cnn, FLAGS.image_dim)
     pointer_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn)
