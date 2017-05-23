@@ -13,8 +13,8 @@ sys.path.append('utils/')
 import fitness_vectorized as fv
 
 NUM_TEST = 10
-NUM_TRAIN = 128
-NUM_VAL = 128
+NUM_TRAIN = 64
+NUM_VAL = 16
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(64, 64, 3)
 
