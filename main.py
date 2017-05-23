@@ -195,12 +195,14 @@ class PointerNetwork(object):
                     reg_loss += tf.nn.l2_loss(tf_var)
         
         loss += reg * reg_loss
+        tf.summary.scalar('train_loss', loss) # Sanya
 
         test_loss = 0.0
         for output, target, weight in zip(self.predictions, self.decoder_targets, self.target_weights):
             test_loss += tf.nn.softmax_cross_entropy_with_logits(logits=output, labels=target) * weight
 
         test_loss = tf.reduce_mean(test_loss)
+        tf.summary.scalar('test_loss', test_loss) # Sanya
 
         optimizer = self.getOptimizer(optim) #tf.train.AdamOptimizer()
         train_op = optimizer.minimize(loss)
@@ -227,8 +229,10 @@ class PointerNetwork(object):
                 # Train
                 feed_dict = self.create_feed_dict(
                     encoder_input_data, decoder_input_data, targets_data)
-                d_x, l = sess.run([loss, train_op], feed_dict=feed_dict)
+                d_x, l, summary = sess.run([loss, train_op, merged], feed_dict=feed_dict)
                 train_loss_value = d_x #0.9 * train_loss_value + 0.1 * d_x
+                tf.summary.scalar('train_loss', train_loss_value) # Sanya
+                writer.add_summary(summary, i)
 
                 if i % 1 == 0:
                     print('Step: %d' % i)
