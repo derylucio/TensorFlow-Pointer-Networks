@@ -15,8 +15,10 @@ from tensorflow.contrib.rnn.python.ops import core_rnn_cell_impl
 from cnn import CNN_FeatureExtractor
 import random
 import numpy as np
+import os
 
 RAND_SEED = 1234
+CKPT_DIR = "model_ckpts"
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
@@ -26,7 +28,7 @@ flags.DEFINE_integer('rnn_size', 300, 'RNN size.  ') # HYPER-PARAMS
 flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
 flags.DEFINE_integer('puzzle_height', 3, 'Puzzle Height')
 flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
-flags.DEFINE_float('learning_rate', 1e-3, 'Learning rate') # Hyper param
+flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate') # Hyper param
 flags.DEFINE_integer('inter_dim', 4096, 'Dimension of intermediate state - if using fully connected' ) # HYPER-PARAMS
 flags.DEFINE_integer('fc_dim', 512, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
 flags.DEFINE_integer('input_dim', 12288, 'Dimensionality of input images - use if flattened') 
@@ -37,6 +39,8 @@ flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HY
 flags.DEFINE_integer('lr_decay_period', 50, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
 flags.DEFINE_float('reg', 0.0, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
+flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
+flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
 
 class PointerNetwork(object):
     def __init__(self, max_len, input_size, size, num_layers, max_gradient_norm, batch_size, learning_rate,
@@ -179,7 +183,7 @@ class PointerNetwork(object):
             return tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate)
 
 
-    def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, model_str):
+    def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, model_str, load_frm_ckpts, tune_vgg=False):
 
         loss = 0.0
         for output, target, weight in zip(self.outputs, self.decoder_targets, self.target_weights):
@@ -188,10 +192,10 @@ class PointerNetwork(object):
         loss = tf.reduce_mean(loss)
         reg_loss = 0
         var_list = []
-
         for tf_var in tf.trainable_variables():
             if not ('Bias' in tf_var.name):
-                if use_cnn and not('vgg_16' in tf_var.name):
+                if use_cnn and ( not ('vgg_16' in tf_var.name) or tune_vgg):
+                    if 'vgg_16' in tf_var.name : print('Added vgg weights for training')
                     var_list.append(tf_var)
                     reg_loss += tf.nn.l2_loss(tf_var)
                 else:
@@ -215,6 +219,8 @@ class PointerNetwork(object):
         correct_order = 0
         all_order = 0
         epoch_data = []
+        ckpt_file = CKPT_DIR + "/" + model_str + "/" + model_str
+        saver = tf.train.Saver()
         config = tf.ConfigProto(allow_soft_placement=True)
         with tf.Session(config=config) as sess:
             merged = tf.summary.merge_all()
@@ -222,6 +228,9 @@ class PointerNetwork(object):
             init = tf.global_variables_initializer()
             sess.run(init)
             if use_cnn: self.inputfn(sess)
+            if(load_frm_ckpts): 
+                print("Restoring Ckpts at : ", ckpt_file)
+                saver.restore(sess, ckpt_file)
             for i in range(nb_epochs):
                 if i > 0 and (i % lr_decay_period == 0):
                     sess.run([self.learning_rate_decay_op])
@@ -267,7 +276,9 @@ class PointerNetwork(object):
                                                axis=1))
                 all_order += FLAGS.batch_size
                 epoch_data.append([train_loss_value, test_loss_value, correct_order / all_order])
-                if i > 0 and i % 50 == 0 :np.save('epoch_data_' + model_str, epoch_data)
+                if i > 0 and i % 20 == 0 :
+                    np.save('epoch_data_' + model_str, epoch_data)
+                    saver.save(sess, ckpt_file)
                 if i % 1 == 0:
                     print('Correct order / All order: %f' % (correct_order / all_order))
                     correct_order = 0
@@ -279,18 +290,25 @@ class PointerNetwork(object):
 def getModelStr():
     model_str = "CNN_" if FLAGS.use_cnn else "MLP_"
     model_str += "rnn_size-" + str(FLAGS.rnn_size) + "_learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) + "_reg-" + str(FLAGS.reg) + "_optimizer-" + FLAGS.optimizer
+    if FLAGS.tune_vgg: model_str += '_tuneVGG'
     return model_str
 
 if __name__ == "__main__":
     # TODO: replace other with params
-    random.seed(RAND_SEED)
-    np.random.seed(RAND_SEED)
     model_str = getModelStr()
     print(model_str)
+    if not os.path.isdir(CKPT_DIR):
+        print('Creating ckpt directory')
+        os.mkdir(CKPT_DIR)
+    if not os.path.isdir(CKPT_DIR + "/" + model_str):
+        print('Creating ckpt directory for : ', model_str)
+        os.mkdir(CKPT_DIR + "/" + model_str)
+    random.seed(RAND_SEED)
+    np.random.seed(RAND_SEED)
     with tf.device('/gpu:0'):
         pointer_network = PointerNetwork(FLAGS.max_steps, FLAGS.input_dim, FLAGS.rnn_size,
                                          1, 5, FLAGS.batch_size, FLAGS.learning_rate, \
                                         FLAGS.lr_decay, FLAGS.inter_dim, \
                                         FLAGS.fc_dim, FLAGS.use_cnn, FLAGS.image_dim, FLAGS.vgg_dim)
         dataset = DataGenerator(FLAGS.puzzle_width, FLAGS.puzzle_width, FLAGS.input_dim, FLAGS.use_cnn, FLAGS.image_dim)
-        pointer_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn, model_str)
+        pointer_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn, model_str,FLAGS.load_from_ckpts, tune_vgg=FLAGS.tune_vgg)
