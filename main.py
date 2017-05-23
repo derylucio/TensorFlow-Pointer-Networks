@@ -207,6 +207,10 @@ class PointerNetwork(object):
         optimizer = self.getOptimizer(optim) #tf.train.AdamOptimizer()
         train_op = optimizer.minimize(loss)
 
+        print("Adding Histogram of Training Variables.")
+        for var in tf.trainable_variables():
+            tf.summary.histogram(var.name, var)
+
         train_loss_value = 0.0
         test_loss_value = 0.0
 
@@ -215,7 +219,9 @@ class PointerNetwork(object):
 
         with tf.Session() as sess:
             merged = tf.summary.merge_all()
-            writer = tf.summary.FileWriter("/tmp/pointer_logs", sess.graph)
+            train_writer = tf.summary.FileWriter("/tmp/pointer_logs/train", sess.graph)
+            test_writer = tf.summary.FileWriter("/tmp/pointer_logs/test", sess.graph)
+
             init = tf.global_variables_initializer()
             sess.run(init)
             if use_cnn: self.inputfn(sess)
@@ -231,8 +237,7 @@ class PointerNetwork(object):
                     encoder_input_data, decoder_input_data, targets_data)
                 d_x, l, summary = sess.run([loss, train_op, merged], feed_dict=feed_dict)
                 train_loss_value = d_x #0.9 * train_loss_value + 0.1 * d_x
-                tf.summary.scalar('train_loss', train_loss_value) # Sanya
-                writer.add_summary(summary, i)
+                train_writer.add_summary(summary, i)
 
                 if i % 1 == 0:
                     print('Step: %d' % i)
@@ -247,7 +252,8 @@ class PointerNetwork(object):
 
                 predictions = sess.run(self.predictions, feed_dict=feed_dict)
 
-                test_loss_value = sess.run(test_loss, feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)
+                test_loss_value, summary = sess.run([test_loss, merged], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)
+                test_writer.add_summary(summary, i)
 
                 if i % 1 == 0:
                     print("Test: ", test_loss_value)
