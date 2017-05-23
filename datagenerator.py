@@ -12,9 +12,9 @@ import multiprocessing
 sys.path.append('utils/')
 import fitness_vectorized as fv
 
-NUM_TEST = 10
-NUM_TRAIN = 64
-NUM_VAL = 16
+NUM_TEST = 200
+NUM_TRAIN = 1000
+NUM_VAL = 200
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(64, 64, 3)
 
@@ -93,7 +93,7 @@ def prepareDataset(X_flat, keep_shape = True):
 		print("Prepared Flattened Dataset!")
 		X_train = X_train.reshape(NUM_TRAIN, L, -1)
 		X_val = X_val.reshape(NUM_VAL, L, -1)
-		print X_test.shape
+		print(X_test.shape)
 		X_test = X_test.reshape(NUM_TEST, L, -1)
 
 	# Create one-hot vectors of these arrays. 
@@ -148,7 +148,7 @@ def generateImageData(N, H, W, dims=(32,32,3)):
 	pairs = [(imgList[num_files*i : (i + 1)*num_files],  H, W, dims) for i in range(8)]
 	results = pool.map(getReshapedImages, pairs)
 	for result in results:
-		print np.shape(result)
+		print(np.shape(result))
 		new_list.extend(result)
 
 
@@ -197,7 +197,7 @@ def reassemble(data, numRows, numCols):
 		for i in np.arange(len(x)):
 			assert(sum(y[i]) == 1)
 			idx = np.where(y[i] == 1)[0]
-			print i, idx
+			print(i, idx)
 			img = x[i].reshape(DIMS)
 			ax[int(idx)].axis('off')
 			ax[int(idx)].imshow(img)

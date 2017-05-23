@@ -13,25 +13,29 @@ from pointer import pointer_decoder
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.contrib.rnn.python.ops import core_rnn_cell_impl
 from cnn import CNN_FeatureExtractor
+import random
+import numpy as np
+
+RAND_SEED = 1234
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_integer('batch_size', 16, 'Batch size')
+flags.DEFINE_integer('batch_size', 50, 'Batch size')
 flags.DEFINE_integer('max_steps', 9, 'Maximum number of pieces in puzzle')
-flags.DEFINE_integer('rnn_size', 100, 'RNN size.  ') # HYPER-PARAMS
+flags.DEFINE_integer('rnn_size', 300, 'RNN size.  ') # HYPER-PARAMS
 flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
 flags.DEFINE_integer('puzzle_height', 3, 'Puzzle Height')
 flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
-flags.DEFINE_float('learning_rate', 5e-4, 'Learning rate') # Hyper param
+flags.DEFINE_float('learning_rate', 1e-3, 'Learning rate') # Hyper param
 flags.DEFINE_integer('inter_dim', 4096, 'Dimension of intermediate state - if using fully connected' ) # HYPER-PARAMS
-flags.DEFINE_integer('fc_dim', 256, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
+flags.DEFINE_integer('fc_dim', 512, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
 flags.DEFINE_integer('input_dim', 12288, 'Dimensionality of input images - use if flattened') 
 flags.DEFINE_integer('vgg_dim', 2048, 'Dimensionality flattnened vgg pool feature') 
 flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPER-PARAMS
-flags.DEFINE_integer('nb_epochs', 100, 'the number of epochs to run')
+flags.DEFINE_integer('nb_epochs', 1000, 'the number of epochs to run')
 flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HYPER-PARAMS
 flags.DEFINE_integer('lr_decay_period', 50, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
-flags.DEFINE_float('reg', 5e-2, 'regularization on model parameters') # HYPER-PARAMS
+flags.DEFINE_float('reg', 0.0, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
 
 class PointerNetwork(object):
@@ -175,7 +179,7 @@ class PointerNetwork(object):
             return tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate)
 
 
-    def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn):
+    def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, model_str):
 
         loss = 0.0
         for output, target, weight in zip(self.outputs, self.decoder_targets, self.target_weights):
@@ -210,8 +214,9 @@ class PointerNetwork(object):
 
         correct_order = 0
         all_order = 0
-
-        with tf.Session() as sess:
+        epoch_data = []
+        config = tf.ConfigProto(allow_soft_placement=True)
+        with tf.Session(config=config) as sess:
             merged = tf.summary.merge_all()
             writer = tf.summary.FileWriter("/tmp/pointer_logs", sess.graph)
             init = tf.global_variables_initializer()
@@ -261,7 +266,8 @@ class PointerNetwork(object):
                 correct_order += np.sum(np.all(predictions_order == input_order,
                                                axis=1))
                 all_order += FLAGS.batch_size
-
+                epoch_data.append([train_loss_value, test_loss_value, correct_order / all_order])
+                if i > 0 and i % 50 == 0 :np.save('epoch_data_' + model_str, epoch_data)
                 if i % 1 == 0:
                     print('Correct order / All order: %f' % (correct_order / all_order))
                     correct_order = 0
@@ -270,13 +276,21 @@ class PointerNetwork(object):
                     # print(encoder_input_data, decoder_input_data, targets_data)
                     # print(inps_)
 
+def getModelStr():
+    model_str = "CNN_" if FLAGS.use_cnn else "MLP_"
+    model_str += "rnn_size-" + str(FLAGS.rnn_size) + "_learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) + "_reg-" + str(FLAGS.reg) + "_optimizer-" + FLAGS.optimizer
+    return model_str
 
 if __name__ == "__main__":
     # TODO: replace other with params
+    random.seed(RAND_SEED)
+    np.random.seed(RAND_SEED)
+    model_str = getModelStr()
+    print(model_str)
     with tf.device('/gpu:0'):
         pointer_network = PointerNetwork(FLAGS.max_steps, FLAGS.input_dim, FLAGS.rnn_size,
                                          1, 5, FLAGS.batch_size, FLAGS.learning_rate, \
                                         FLAGS.lr_decay, FLAGS.inter_dim, \
                                         FLAGS.fc_dim, FLAGS.use_cnn, FLAGS.image_dim, FLAGS.vgg_dim)
         dataset = DataGenerator(FLAGS.puzzle_width, FLAGS.puzzle_width, FLAGS.input_dim, FLAGS.use_cnn, FLAGS.image_dim)
-        pointer_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn)
+        pointer_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn, model_str)
