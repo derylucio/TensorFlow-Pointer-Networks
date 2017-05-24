@@ -24,7 +24,7 @@ CKPT_DIR = "model_ckpts"
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_integer('batch_size', 20, 'Batch size')
+flags.DEFINE_integer('batch_size', 50, 'Batch size')
 flags.DEFINE_integer('max_steps', 9, 'Maximum number of pieces in puzzle')
 flags.DEFINE_integer('rnn_size', 300, 'RNN size.  ') # HYPER-PARAMS
 flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
@@ -36,10 +36,10 @@ flags.DEFINE_integer('fc_dim', 512, 'Dimension of final pre-encoder state - if u
 flags.DEFINE_integer('input_dim', 12288, 'Dimensionality of input images - use if flattened') 
 flags.DEFINE_integer('vgg_dim', 2048, 'Dimensionality flattnened vgg pool feature') 
 flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPER-PARAMS
-flags.DEFINE_integer('nb_epochs', 1000, 'the number of epochs to run')
+flags.DEFINE_integer('nb_epochs', 3000, 'the number of epochs to run')
 flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HYPER-PARAMS
 flags.DEFINE_integer('lr_decay_period', 50, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
-flags.DEFINE_float('reg', 0.0, 'regularization on model parameters') # HYPER-PARAMS
+flags.DEFINE_float('reg', 1e-2, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
@@ -279,8 +279,7 @@ class PointerNetwork(object):
 
                 input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
                 input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
-                print("Here : ", np.shape(input_order), np.shape(predictions_order))
-                if i % 20 == 0 :
+                if i > 0 and  i % 50 == 0 :
                     saver.save(sess, ckpt_file)
                     total_neighbor_acc = 0.0
                     total_direct_acc = 0.0
@@ -290,7 +289,7 @@ class PointerNetwork(object):
                         total_direct_acc  += directAccuracy(correct, pred)
                     print("Avg neighbor acc = ", total_neighbor_acc/len(input_order), "Avg direct Accuracy = ", total_direct_acc/len(input_order))
                     epoch_data.append([train_loss_value, test_loss_value,total_neighbor_acc/len(input_order), total_direct_acc/len(input_order)])
-                    np.save('epoch_data_' + model_str, epoch_data)
+                    np.save(CKPT_DIR + "/" + model_str + '/epoch_data_' + model_str, epoch_data)
                     # print(encoder_input_data, decoder_input_data, targets_data)
                     # print(inps_)
 

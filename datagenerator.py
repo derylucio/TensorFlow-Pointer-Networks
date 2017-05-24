@@ -12,9 +12,9 @@ import multiprocessing
 sys.path.append('utils/')
 import fitness_vectorized as fv
 
-NUM_TEST = 20
-NUM_TRAIN = 100
-NUM_VAL = 20
+NUM_TEST = 200
+NUM_TRAIN = 1000
+NUM_VAL = 100
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(64, 64, 3)
 
