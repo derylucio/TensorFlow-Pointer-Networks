@@ -7,108 +7,58 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from skimage.transform import resize
 import multiprocessing
+import glob
 
 
 sys.path.append('utils/')
 import fitness_vectorized as fv
 
-NUM_TEST = 10
-NUM_TRAIN = 128
-NUM_VAL = 128
+NUM_TEST = 8
+NUM_TRAIN = 16
+NUM_VAL = 8
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(64, 64, 3)
 
 numRows, numCols = (3, 3)
 
-DATA_DIR = "data/"
+TRAIN_DIR = "data/train"
+VAL_DIR = "data/val"
+TEST_DIR = "data/test"
 
-#for each image in that batch, the number of pieces it is cut into
- # 	making toy dataset 
-# def getData(puzzle_height, puzzle_width, batch_size=700):
-#   	data = {}
-#   	train_correct, x_train, y_train, train_seq = [], [], [], []
-#   	for i in range(batch_size):
-# 		perm = np.random.permutation(puzzle_width*puzzle_height)
-#  		x_train.append([[j] for j in perm])
-#  		train_correct.append([[j] for j in range(puzzle_height*puzzle_width)])
-#  		y = np.zeros((puzzle_width*puzzle_height, puzzle_width*puzzle_height))
-#  		y[range(len(perm)), perm] = 1
-#  		y_train.append(y)
-# 		train_seq.append(puzzle_width*puzzle_height)
-# 	train_correct, x_train, y_train, train_seq = np.array(train_correct), np.array(x_train), np.array(y_train), np.array(train_seq)
-# 	x_val, y_val, val_seq = [], [], []
-# 	for i in range(100):
-# 		perm = np.random.permutation(puzzle_width*puzzle_height)
-#  		x_val.append([[j] for j in perm])
-#  		y = np.zeros((puzzle_width*puzzle_height, puzzle_width*puzzle_height))
-#  		y[range(len(perm)), perm] = 1
-# 		y_val.append(y)
-# 		val_seq.append(puzzle_width*puzzle_height)
-# 	x_val, y_val, val_seq = np.array(x_val), np.array(y_val), np.array(val_seq)
+POOL_SIZE = 8		
+NUM_CATS = 2
 
-# 	data['train'] = (train_correct, x_train, y_train, train_seq)
-# 	data['val'] = (x_val, y_val, val_seq)
-# 	return data
- 
-# data = getData(2, 2, 2)
-# print data['train'][0], data['train'][1], 
-# perm = np.random.permutation(len(data['train'][1]))
-# print 'this is ', perm
-# print data['train'][0][perm],  data['train'][1][perm]
+assert(POOL_SIZE >= min(NUM_TRAIN, NUM_TEST, NUM_VAL))		# Crashes otherwise. 
 
-def getData(puzzle_height, puzzle_width, batch_size=-1, use_cnn=False):
+# For now, assert that this is evenly divisible. 
+assert NUM_TEST % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_TRAIN)
+assert NUM_VAL % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_VAL)
+assert NUM_TRAIN % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_TRAIN)
+
+
+def getData(puzzle_height, puzzle_width, use_cnn=False):
 	'''
-	returns data : such that data['val'] = (x_val, y_val, val_seq_len)
-							data['train'] = (x_train, y_train, train_seq_len)
-							data['test'] = (x_test, y_test, test_seq_len) 
-							# x_train = [batch1, batch2, ... batchn] - each batch should be the image
-							# seq_len = [batch_size, ] # for each image in that batch, the number of pieces it is cut int
+	returns 
+	data:   data['val'] = (x_val, onehot_cat, y_val, val_seq_len)
+			data['train'] = (x_train, onehot_cat, y_train, train_seq_len)
+			data['test'] = (x_test, onehot_cat, y_test, test_seq_len) 
+			onehot_cat = One Hot vector of categories or *None* if we're not training on category data
+			x_train = [batch1, batch2, ... batchn] - each batch should be the image
+			seq_len = [batch_size, ] # for each image in that batch, the number of pieces it is cut int
 	'''
-	X_flat = generateImageData(NUM_DATA, puzzle_height, puzzle_width, dims=DIMS)
-	data = prepareDataset(X_flat, keep_shape = use_cnn)
-	return data
-
-def prepareDataset(X_flat, keep_shape = True):
-	'''
-	Splits and preprocessed dimension-formatted data into 
-	train, test and validation data. 
-	Returns:
-	'''
-	print("Preparing Dataset...")
-	print(X_flat.shape)
-	N, L, W, H, C = X_flat.shape
-	xs = np.empty_like(X_flat)
-	ys = np.zeros((N, L), dtype=np.uint8)
-	ys += np.arange(L, dtype=np.uint8)
-
-	np.random.shuffle(X_flat)
-	for i in np.arange(X_flat.shape[0]):
-		np.random.shuffle(ys[i])
-		xs[i,:] = X_flat[i,ys[i]]
-
-	X_train, X_val, X_test = np.split(xs, [NUM_TRAIN, NUM_TRAIN + NUM_VAL])
-	y_train, y_val, y_test = np.split(ys, [NUM_TRAIN, NUM_TRAIN + NUM_VAL])
+	H, W = puzzle_height, puzzle_width
+	train = loadImages(TRAIN_DIR, NUM_TRAIN, H, W, dims=DIMS)
+	val = loadImages(VAL_DIR, NUM_VAL, H, W, dims=DIMS)
+	test = loadImages(TEST_DIR, NUM_TEST, H, W, dims=DIMS)
 	
-	if not keep_shape:
-		print("Prepared Flattened Dataset!")
-		X_train = X_train.reshape(NUM_TRAIN, L, -1)
-		X_val = X_val.reshape(NUM_VAL, L, -1)
-		print X_test.shape
-		X_test = X_test.reshape(NUM_TEST, L, -1)
-
-	# Create one-hot vectors of these arrays. 
-	y_train_onehot = np.where(y_train[:,:,np.newaxis] == np.arange(L), 1, 0)
-	y_val_onehot = np.where(y_val[:,:,np.newaxis] == np.arange(L), 1, 0)  
-	y_test_onehot = np.where(y_test[:,:,np.newaxis] == np.arange(L), 1, 0)  
-
-	train_seq = np.ones((len(X_train)))*L #np.full((len(X_train)), L, dtype=np.uint8)[0]
-	val_seq = np.ones((len(X_val)))*L #np.full((len(X_val)), L, dtype=np.uint8)[0]
-	test_seq = np.ones((len(X_test)))*L#np.full((len(X_test)), L, dtype=np.uint8)[0]
+	train = shuffleAndReshapeData(train, keep_shape=use_cnn)
+	val = shuffleAndReshapeData(val, keep_shape=use_cnn)
+	test = shuffleAndReshapeData(test, keep_shape=use_cnn)
 
 	return {
-      'train': (X_train, y_train_onehot, train_seq),  
-      'val'  : (X_val, y_val_onehot, val_seq), 
-      'test' : (X_test, y_test_onehot, test_seq)
+      'train': train,  
+      'val'  : val, 
+      'test' : test
     }
 
 def getReshapedImages(args):
@@ -120,97 +70,108 @@ def getReshapedImages(args):
 		new_list.append(resized_img)
 	return new_list
 
-def readImg(img_name):
-	return scipy.ndimage.imread(DATA_DIR + os.sep + img_name)
+def readImg(filename):
+	return scipy.ndimage.imread(filename)
 
-# need to parallelize
-def generateImageData(N, H, W, dims=(32,32,3)):
+def shuffleAndReshapeData(args, keep_shape=True):
 	'''
-	Prepares images from the data dir and returns an N*W*H*C numpy array.
-	TODO: Add more transformations.   
+	Splits and preprocessed dimension-formatted data into 
+	train, test and validation data. 
 	'''
-	print("Generating Image Data...")
-	imgList = []
-	pool = multiprocessing.Pool(8)
-	imgNames = sorted(os.listdir(DATA_DIR))[:NUM_DATA]
-	imgList = pool.map(readImg, imgNames)
-	print("Loaded %d images from %s." % (len(imgList), DATA_DIR))
+	X, cats, fnames = args
+	N, L, W, H, C = X.shape 		# TODO: Check the updated shape. 
+	np.random.seed(231)
 
-	# print("Augmenting images by flipping.")
-	# imgListFlipped = [np.fliplr(img) for img in imgList] # Expensive. 
-	# print("Flipped %d images from %s." % (len(imgListFlipped), DATA_DIR))
-	# imgList.extend(imgListFlipped)
+	X_shuff = np.empty_like(X)
+	y_shuff = np.zeros((N, L), dtype=np.uint8)
+	y_shuff += np.arange(L, dtype=np.uint8)
 
-	X_arr = []
-	new_list = []
+	print("Shuffling Data.")
+	idx_shuff = np.array(np.random.permutation(X.shape[0]))
+	print(idx_shuff)
+	X_shuff = X[idx_shuff]
+	cats_shuff = cats[idx_shuff]
+	fnames_shuff = fnames[idx_shuff]
+	assert(np.sum(X - X_shuff) != 0)
 
-	num_files = int(np.ceil(len(imgList) / 8.0))
-	pairs = [(imgList[num_files*i : (i + 1)*num_files],  H, W, dims) for i in range(8)]
+	for i in np.arange(X_shuff.shape[0]):
+		np.random.shuffle(y_shuff[i])
+		X_shuff[i,:] = X_shuff[i,y_shuff[i]]
+	print("Shuffled Data.")
+
+	if not keep_shape:
+		X = X.reshape(N, L, -1)		# TODO: Update once verified. 
+		print("Reshaped to new shape {0}.".format(X.shape))
+	
+	y_onehot_shuff = np.where(y_shuff[:,:,np.newaxis] == np.arange(L), 1, 0) 
+	seq = np.ones((len(X_shuff))) * L
+	
+	return X_shuff, y_onehot_shuff, cats_shuff, seq, fnames_shuff
+
+def loadImages(directory, N, H, W, dims=(32,32,3)): 
+	print("Loading %d Images from %s" % (N, directory))
+	X, fnames = [], []
+	cats = []
+
+	pool = multiprocessing.Pool(POOL_SIZE)
+
+	img_names = []
+	cat_files = directory + '/*/*'
+	print("Loading images to disk...")
+	if len(glob.glob(cat_files)) == 0:  
+		print("Directory does not divide into categories.")
+		for filename in sorted(glob.glob('data/*/*')): # TODO: Do something about cats.
+			img_names.append(directory + os.sep + filename)
+			fnames.append(filename)			
+	else:
+		print("Directory divides in categories.")
+		num_per_cat = N / NUM_CATS
+		img_names = []
+		# Seems more efficient to iterate over category dirs and get exact number
+		# of imgs per category. Hence, not using glob to load all imgs to disk.  
+		for dirname in sorted(os.listdir(directory)):
+			path = os.path.join(directory, dirname)
+			filenames = [os.path.join(path, fname) for fname in sorted(os.listdir(path))]
+
+			cats.extend([dirname] * len(filenames))
+			fnames.extend(filenames)
+			img_names.extend(filenames[:num_per_cat])
+	
+	assert(len(img_names) == N)
+	imgs = pool.map(readImg, img_names)
+	print("image names", img_names)
+	print("fnames", fnames)
+
+	print("Resizing images.")
+	num_files = int(np.ceil(len(imgs) / POOL_SIZE))
+	pairs = [(imgs[num_files * i : num_files * (i + 1)], H, W, dims) for i in range(POOL_SIZE)]
 	results = pool.map(getReshapedImages, pairs)
+
+	new_list = []
 	for result in results:
 		print np.shape(result)
 		new_list.extend(result)
 
-
-	imgList = new_list
-	imgList = np.array(imgList)
-	imgList -= np.mean(imgList, axis = 0)
-	# print np.shape(imgList), np.shape(np.std(imgList, axis = 0))
-	imgList /= np.std(imgList, axis = 0)
-	for i, img in enumerate(imgList):
-		# TODO: Check this to confirm it's good. 
+	print("Normalizing Images")
+	imgs = np.array(new_list)
+	imgs -= np.mean(imgs, axis = 0)
+	imgs /= np.std(imgs, axis = 0)
+	for img in imgs:
 		img = img.astype(dtype=np.float64)
-		# np.subtract(img, np.mean(img), out=img, casting="safe")
-		# np.divide(img, np.std(img), out=img, casting="safe") 
-		X_arr.append(np.array(fv.splitImage(H, W, img, dims)))
-	print("Generated Data!")
-	return np.array(X_arr, dtype=float)
+		X.append(np.array(fv.splitImage(H, W, img, dims)))
 
-def reassemble(data, numRows, numCols):
-	print("Reassembling...")
-	X_train, y_train, _ = data['train']
-	X_val, y_val, _ = data['val']
-	X_test, y_test, _ = data['test']
+	assert(len(X) == N)
+	print("Loaded %d Images from %s" % (len(X), directory))
+	return np.array(X), np.array(cats), np.array(fnames)
 
-	train_idx = np.random.randint(NUM_TRAIN)
-	X_train0 = X_train[train_idx]
-	y_train0 = y_train[train_idx]
+######### TESTING ###############
+data = getData(3, 3)
+X_train, y_onehot_train, cats_train, seq_train, fnames_train = data['train']
+X_val, y_onehot_val, cats_val, seq_val, fnames_val = data['val']
+X_test, y_onehot_test, cats_test, seq_test, fnames_test = data['test']
 
-	test_idx = np.random.randint(NUM_TEST)
-	X_test0 = X_test[test_idx]
-	y_test0 = y_test[test_idx]
-
-	val_idx = np.random.randint(NUM_VAL)
-	X_val0 = X_val[val_idx]
-	y_val0 = y_val[val_idx]
-
-	xs = [X_train0, X_test0, X_val0]
-	ys = [y_train0, y_test0, y_val0]
-
-	for i in np.arange(3):
-		x, y = xs[i], ys[i]
-		plt.figure(i)
-		gs = gridspec.GridSpec(numRows, numCols)
-		gs.update(wspace=0.0, hspace=0.0)
-		ax = [plt.subplot(gs[i]) for i in np.arange(numRows * numCols)]
-
-		for i in np.arange(len(x)):
-			assert(sum(y[i]) == 1)
-			idx = np.where(y[i] == 1)[0]
-			print i, idx
-			img = x[i].reshape(DIMS)
-			ax[int(idx)].axis('off')
-			ax[int(idx)].imshow(img)
-			ax[int(idx)].set_aspect('equal')
-	
-	plt.tight_layout(pad=0.0, w_pad=0.0, h_pad=0.0)
-	plt.show()
-
-# TEST
-# print("========= TESTING ==========")
-# data = getData(numRows, numCols) 
-# for n, d in data.items():
-# 	print n, d.shape
-# reassemble(data, numRows, numCols)
-# print("========= ALL TESTS PASS =======")
-
+for name, tup in data.items():
+	print(name)
+	X, y, cats, seq, fnames = tup
+	print(X.shape, y.shape, seq.shape)
+#########  DONE   ###############
