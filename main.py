@@ -69,10 +69,6 @@ class PointerNetwork(object):
             self.learning_rate * learning_rate_decay_factor)
         self.global_step = tf.Variable(0, trainable=False)
 
-        cell = tf.contrib.rnn.GRUCell(size)
-        decoder_cell = tf.contrib.rnn.GRUCell(size)
-        if num_layers > 1:
-            cell = tf.contrib.rnn.MultiRNNCell([single_cell] * num_layers)
 
         self.encoder_inputs = []
         self.decoder_inputs = []
@@ -134,10 +130,15 @@ class PointerNetwork(object):
                     self.proj_decoder_inputs.append(out)
 
         # Need for attention
+        cell = tf.contrib.rnn.GRUCell(size)
+        decoder_cell = tf.contrib.rnn.GRUCell(size)
+        if num_layers > 1:
+            cell = tf.contrib.rnn.MultiRNNCell([single_cell] * num_layers)
+
         if not bidirect:
             encoder_outputs, final_state = tf.contrib.rnn.static_rnn(cell, self.proj_encoder_inputs, dtype=tf.float32)
         else:
-            encoder_outputs, output_state_fw, output_state_bw = tf.contrib.rnn.static_rnn(cell, self.proj_encoder_inputs, dtype=tf.float32)
+            encoder_outputs, output_state_fw, output_state_bw = tf.contrib.rnn.static_bidirectional_rnn(tf.contrib.rnn.GRUCell(size), tf.contrib.rnn.GRUCell(size), self.proj_encoder_inputs, dtype=tf.float32)
             final_state = tf.concat(output_state_fw, output_state_bw, axis=1)
 
 
