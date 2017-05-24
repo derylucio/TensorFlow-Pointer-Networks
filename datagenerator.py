@@ -5,11 +5,9 @@ import os
 import sys
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from skimage.transform import resize
 import multiprocessing
 import glob
-
-
+from skimage.transform import resize
 sys.path.append('utils/')
 import fitness_vectorized as fv
 
@@ -19,21 +17,20 @@ NUM_VAL = 8
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(64, 64, 3)
 
-numRows, numCols = (3, 3)
-
-TRAIN_DIR = "data/train"
-VAL_DIR = "data/val"
-TEST_DIR = "data/test"
+TRAIN_DIR = "data2/train"
+VAL_DIR = "data2/val"
+TEST_DIR = "data2/test"
 
 POOL_SIZE = 8		
 NUM_CATS = 2
 
 assert(POOL_SIZE >= min(NUM_TRAIN, NUM_TEST, NUM_VAL))		# Crashes otherwise. 
-
 # For now, assert that this is evenly divisible. 
 assert NUM_TEST % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_TRAIN)
 assert NUM_VAL % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_VAL)
 assert NUM_TRAIN % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_TRAIN)
+categories = sorted([os.path.basename(cat) for cat in glob.glob(TRAIN_DIR + "/*")])
+print len(categories)
 
 
 def getData(puzzle_height, puzzle_width, use_cnn=False):
@@ -90,9 +87,16 @@ def shuffleAndReshapeData(args, keep_shape=True):
 	idx_shuff = np.array(np.random.permutation(X.shape[0]))
 	print(idx_shuff)
 	X_shuff = X[idx_shuff]
-	cats_shuff = cats[idx_shuff]
 	fnames_shuff = fnames[idx_shuff]
-	assert(np.sum(X - X_shuff) != 0)
+
+	cats_onehot_shuff = None
+	if len(cats) > 0: 
+		cats_shuff = cats[idx_shuff]
+		cats_onehot_shuff = np.where(cats_shuff[:,np.newaxis] == categories, 1, 0)
+		print("===============")
+		print(cats_shuff)
+		print(np.argmax(cats_onehot_shuff, axis=0))
+		print("===============")
 
 	for i in np.arange(X_shuff.shape[0]):
 		np.random.shuffle(y_shuff[i])
@@ -104,27 +108,35 @@ def shuffleAndReshapeData(args, keep_shape=True):
 		print("Reshaped to new shape {0}.".format(X.shape))
 	
 	y_onehot_shuff = np.where(y_shuff[:,:,np.newaxis] == np.arange(L), 1, 0) 
+	# assert(np.sum(np.argmax(y_onehot_shuff) - y_shuff) < 0.5)
+	print("*********")
+	print(np.argmax(y_onehot_shuff, axis=0))
+	print(y_shuff)
+	print("*********")
 	seq = np.ones((len(X_shuff))) * L
 	
-	return X_shuff, y_onehot_shuff, cats_shuff, seq, fnames_shuff
+	# TODO: Fix cats_shuff,
+	return X_shuff, y_onehot_shuff, cats_onehot_shuff, seq, fnames_shuff
 
 def loadImages(directory, N, H, W, dims=(32,32,3)): 
+	'''
+	Loads images from a specific directory (data/(train|val|test)/*) and resizes
+	the images. 
+	Returns X, categories, filenames.
+	'''
 	print("Loading %d Images from %s" % (N, directory))
-	X, fnames = [], []
-	cats = []
-
-	pool = multiprocessing.Pool(POOL_SIZE)
+	X, cats, fnames = [], [], []
 
 	img_names = []
 	cat_files = directory + '/*/*'
 	print("Loading images to disk...")
 	if len(glob.glob(cat_files)) == 0:  
 		print("Directory does not divide into categories.")
-		for filename in sorted(glob.glob('data/*/*')): # TODO: Do something about cats.
-			img_names.append(directory + os.sep + filename)
+		for filename in sorted(glob.glob(directory + '/*')): # TODO: Do something about cats.
+			img_names.append(filename)
 			fnames.append(filename)			
 	else:
-		print("Directory divides in categories.")
+		print("Directory divides into categories.")
 		num_per_cat = N / NUM_CATS
 		img_names = []
 		# Seems more efficient to iterate over category dirs and get exact number
@@ -137,10 +149,9 @@ def loadImages(directory, N, H, W, dims=(32,32,3)):
 			fnames.extend(filenames)
 			img_names.extend(filenames[:num_per_cat])
 	
-	assert(len(img_names) == N)
+	# assert len(img_names) - N == 0, "len(imgs)={0:d} not equal to N={0:d}".format(len(img_names), N)
+	pool = multiprocessing.Pool(POOL_SIZE)
 	imgs = pool.map(readImg, img_names)
-	print("image names", img_names)
-	print("fnames", fnames)
 
 	print("Resizing images.")
 	num_files = int(np.ceil(len(imgs) / POOL_SIZE))
@@ -149,7 +160,6 @@ def loadImages(directory, N, H, W, dims=(32,32,3)):
 
 	new_list = []
 	for result in results:
-		print np.shape(result)
 		new_list.extend(result)
 
 	print("Normalizing Images")
@@ -160,8 +170,8 @@ def loadImages(directory, N, H, W, dims=(32,32,3)):
 		img = img.astype(dtype=np.float64)
 		X.append(np.array(fv.splitImage(H, W, img, dims)))
 
-	assert(len(X) == N)
 	print("Loaded %d Images from %s" % (len(X), directory))
+	# assert(len(X) == N)
 	return np.array(X), np.array(cats), np.array(fnames)
 
 ######### TESTING ###############
@@ -174,4 +184,5 @@ for name, tup in data.items():
 	print(name)
 	X, y, cats, seq, fnames = tup
 	print(X.shape, y.shape, seq.shape)
+	print(cats)
 #########  DONE   ###############
