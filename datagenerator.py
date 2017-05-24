@@ -17,14 +17,15 @@ NUM_VAL = 8
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(64, 64, 3)
 
-TRAIN_DIR = "data2/train"
-VAL_DIR = "data2/val"
-TEST_DIR = "data2/test"
+TRAIN_DIR = "data/train"
+VAL_DIR = "data/val"
+TEST_DIR = "data/test"
 
 POOL_SIZE = 8		
 
 categories = sorted([os.path.basename(cat) for cat in glob.glob(TRAIN_DIR + "/*")])
-NUM_CATS = 2 # len(categories)
+NUM_CATS = len(categories)
+
 assert(POOL_SIZE >= min(NUM_TRAIN, NUM_TEST, NUM_VAL))		# Crashes otherwise. 
 # For now, assert that this is evenly divisible. 
 assert NUM_TEST % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_TRAIN)
