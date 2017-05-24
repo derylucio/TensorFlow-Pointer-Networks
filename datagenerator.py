@@ -11,9 +11,10 @@ from skimage.transform import resize
 sys.path.append('utils/')
 import fitness_vectorized as fv
 
-NUM_TEST = 8
-NUM_TRAIN = 16
-NUM_VAL = 8
+
+NUM_TEST = 200
+NUM_TRAIN = 1000
+NUM_VAL = 100
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(64, 64, 3)
 

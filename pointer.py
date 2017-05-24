@@ -104,6 +104,7 @@ def pointer_decoder(decoder_inputs, initial_state, attention_states, cell,
 
         attns.set_shape([None, attn_size])
         inps = []
+        print(decoder_inputs[0].get_shape(), initial_state.get_shape(), attention_states.get_shape())
         for i in range(len(decoder_inputs)):
             if i > 0:
                 vs.get_variable_scope().reuse_variables()
@@ -113,14 +114,14 @@ def pointer_decoder(decoder_inputs, initial_state, attention_states, cell,
                 inp = tf.stack(decoder_inputs)
                 inp = tf.transpose(inp, perm=[1, 0, 2])
                 inp = tf.reshape(inp, [-1, attn_length, input_size])
-                inp = tf.reduce_sum(inp * tf.reshape(tf.nn.softmax(output), [-1, attn_length, 1]), 1)
+                inp = tf.reduce_sum(inp * tf.reshape(tf.nn.softmax(output), [-1, attn_length, 1]), 1) # might make more sense to feed in 1-hot
                 inp = tf.stop_gradient(inp)
                 inps.append(inp)
 
             # Use the same inputs in inference, order internaly
 
             # Merge input and previous attentions into one vector of the right size.
-            x = core_rnn_cell_impl._linear([inp, attns], cell.output_size, True)
+            x = inp   # might want to do this if we have previous attention core_rnn_cell_impl._linear([inp, attns], cell.output_size, True)
             # Run the RNN.
             cell_output, new_state = cell(x, states[-1])
             states.append(new_state)

@@ -66,6 +66,6 @@ def cacheDisimilarityScores(filename, width):
 	print "Done storing Right-Down Similarities for %s!" % filename
 	return disimilarityScores
 
-disimilarity = cacheDisimilarityScores(filename, 16)
+#disimilarity = cacheDisimilarityScores(filename, 16)
 # print "Fitness: ", getFitness([[(1,1), (1,2)],[(2,1), (2,2)]])
 
