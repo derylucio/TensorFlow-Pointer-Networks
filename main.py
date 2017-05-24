@@ -203,15 +203,21 @@ class PointerNetwork(object):
                     reg_loss += tf.nn.l2_loss(tf_var)
         
         loss += reg * reg_loss
+        tf.summary.scalar('train_loss', loss) # Sanya
 
         test_loss = 0.0
         for output, target, weight in zip(self.predictions, self.decoder_targets, self.target_weights):
             test_loss += tf.nn.softmax_cross_entropy_with_logits(logits=output, labels=target) * weight
 
         test_loss = tf.reduce_mean(test_loss)
+        tf.summary.scalar('test_loss', test_loss) # Sanya
 
         optimizer = self.getOptimizer(optim) #tf.train.AdamOptimizer()
         train_op = optimizer.minimize(loss)
+
+        print("Adding Histogram of Training Variables.")
+        for var in tf.trainable_variables():
+            tf.summary.histogram(var.name, var)
 
         train_loss_value = 0.0
         test_loss_value = 0.0
@@ -224,7 +230,9 @@ class PointerNetwork(object):
         config = tf.ConfigProto(allow_soft_placement=True)
         with tf.Session(config=config) as sess:
             merged = tf.summary.merge_all()
-            writer = tf.summary.FileWriter("/tmp/pointer_logs", sess.graph)
+            train_writer = tf.summary.FileWriter("/tmp/pointer_logs/train", sess.graph)
+            test_writer = tf.summary.FileWriter("/tmp/pointer_logs/test", sess.graph)
+
             init = tf.global_variables_initializer()
             sess.run(init)
             if use_cnn: self.inputfn(sess)
@@ -241,8 +249,9 @@ class PointerNetwork(object):
                 # Train
                 feed_dict = self.create_feed_dict(
                     encoder_input_data, decoder_input_data, targets_data)
-                d_x, l = sess.run([loss, train_op], feed_dict=feed_dict)
+                d_x, l, summary = sess.run([loss, train_op, merged], feed_dict=feed_dict)
                 train_loss_value = d_x #0.9 * train_loss_value + 0.1 * d_x
+                train_writer.add_summary(summary, i)
 
                 if i % 1 == 0:
                     print('Step: %d' % i)
@@ -257,7 +266,8 @@ class PointerNetwork(object):
 
                 predictions = sess.run(self.predictions, feed_dict=feed_dict)
 
-                test_loss_value = sess.run(test_loss, feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)
+                test_loss_value, summary = sess.run([test_loss, merged], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)
+                test_writer.add_summary(summary, i)
 
                 if i % 1 == 0:
                     print("Test: ", test_loss_value)
