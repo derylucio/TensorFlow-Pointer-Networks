@@ -43,10 +43,11 @@ flags.DEFINE_float('reg', 1e-2, 'regularization on model parameters') # HYPER-PA
 flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
+flags.DEFINE_bool('bidirect', True, "Whether to use a bidirectional rnn for encoder")
 
 class PointerNetwork(object):
     def __init__(self, max_len, input_size, size, num_layers, max_gradient_norm, batch_size, learning_rate,
-                 learning_rate_decay_factor, inter_dim, fc_dim, use_cnn, image_dim, vgg_dim):
+                 learning_rate_decay_factor, inter_dim, fc_dim, use_cnn, image_dim, vgg_dim, bidirect):
         """Create the network. A simplified network that handles only sorting.
         
         Args:
@@ -68,10 +69,6 @@ class PointerNetwork(object):
             self.learning_rate * learning_rate_decay_factor)
         self.global_step = tf.Variable(0, trainable=False)
 
-        cell = tf.contrib.rnn.GRUCell(size)
-        decoder_cell = tf.contrib.rnn.GRUCell(size)
-        if num_layers > 1:
-            cell = tf.contrib.rnn.MultiRNNCell([single_cell] * num_layers)
 
         self.encoder_inputs = []
         self.decoder_inputs = []
@@ -133,7 +130,17 @@ class PointerNetwork(object):
                     self.proj_decoder_inputs.append(out)
 
         # Need for attention
-        encoder_outputs, final_state = tf.contrib.rnn.static_rnn(cell, self.proj_encoder_inputs, dtype=tf.float32)
+        cell = tf.contrib.rnn.GRUCell(size)
+        decoder_cell = tf.contrib.rnn.GRUCell(size)
+        if num_layers > 1:
+            cell = tf.contrib.rnn.MultiRNNCell([single_cell] * num_layers)
+
+        if not bidirect:
+            encoder_outputs, final_state = tf.contrib.rnn.static_rnn(cell, self.proj_encoder_inputs, dtype=tf.float32)
+        else:
+            encoder_outputs, output_state_fw, output_state_bw = tf.contrib.rnn.static_bidirectional_rnn(tf.contrib.rnn.GRUCell(size), tf.contrib.rnn.GRUCell(size), self.proj_encoder_inputs, dtype=tf.float32)
+            final_state = tf.concat(output_state_fw, output_state_bw, axis=1)
+
 
         # Need a dummy output to point on it. End of decoding.
         encoder_outputs = [tf.zeros([FLAGS.batch_size, cell.output_size])] + encoder_outputs
@@ -315,6 +322,6 @@ if __name__ == "__main__":
         pointer_network = PointerNetwork(FLAGS.max_steps, FLAGS.input_dim, FLAGS.rnn_size,
                                          1, 5, FLAGS.batch_size, FLAGS.learning_rate, \
                                         FLAGS.lr_decay, FLAGS.inter_dim, \
-                                        FLAGS.fc_dim, FLAGS.use_cnn, FLAGS.image_dim, FLAGS.vgg_dim)
+                                        FLAGS.fc_dim, FLAGS.use_cnn, FLAGS.image_dim, FLAGS.vgg_dim, FLAGS.bidirect)
         dataset = DataGenerator(FLAGS.puzzle_width, FLAGS.puzzle_width, FLAGS.input_dim, FLAGS.use_cnn, FLAGS.image_dim)
         pointer_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn, model_str,FLAGS.load_from_ckpts, tune_vgg=FLAGS.tune_vgg)
