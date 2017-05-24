@@ -16,13 +16,15 @@ from cnn import CNN_FeatureExtractor
 import random
 import numpy as np
 import os
-
+import sys 
+sys.path.append("utils/")
+from evaluation import NeighborAccuracy, directAccuracy  
 RAND_SEED = 1234
 CKPT_DIR = "model_ckpts"
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_integer('batch_size', 50, 'Batch size')
+flags.DEFINE_integer('batch_size', 20, 'Batch size')
 flags.DEFINE_integer('max_steps', 9, 'Maximum number of pieces in puzzle')
 flags.DEFINE_integer('rnn_size', 300, 'RNN size.  ') # HYPER-PARAMS
 flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
@@ -230,8 +232,8 @@ class PointerNetwork(object):
         config = tf.ConfigProto(allow_soft_placement=True)
         with tf.Session(config=config) as sess:
             merged = tf.summary.merge_all()
-            train_writer = tf.summary.FileWriter("/tmp/pointer_logs/train", sess.graph)
-            test_writer = tf.summary.FileWriter("/tmp/pointer_logs/test", sess.graph)
+            train_writer = tf.summary.FileWriter("/tmp/" + model_str + "/train", sess.graph)
+            test_writer = tf.summary.FileWriter("/tmp/" + model_str + "/test", sess.graph)
 
             init = tf.global_variables_initializer()
             sess.run(init)
@@ -273,27 +275,22 @@ class PointerNetwork(object):
                     print("Test: ", test_loss_value)
 
                 predictions_order = np.concatenate([np.expand_dims(prediction, 0) for prediction in predictions])
-                predictions_order = np.argmax(predictions_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps]
+                predictions_order = np.argmax(predictions_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
 
                 input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
-                input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 1:] - 1
-                # input_order = np.concatenate(
-                #     [np.expand_dims(encoder_input_data_, 0) for encoder_input_data_ in encoder_input_data])
-                # input_order = np.argsort(input_order, 0).squeeze().transpose(1, 0) + 1
-
-
-                correct_order += np.sum(np.all(predictions_order == input_order,
-                                               axis=1))
-                all_order += FLAGS.batch_size
-                epoch_data.append([train_loss_value, test_loss_value, correct_order / all_order])
-                if i > 0 and i % 20 == 0 :
-                    np.save('epoch_data_' + model_str, epoch_data)
+                input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
+                print("Here : ", np.shape(input_order), np.shape(predictions_order))
+                if i % 20 == 0 :
                     saver.save(sess, ckpt_file)
-                if i % 1 == 0:
-                    print('Correct order / All order: %f' % (correct_order / all_order))
-                    correct_order = 0
-                    all_order = 0
-
+                    total_neighbor_acc = 0.0
+                    total_direct_acc = 0.0
+                    for correct, pred in zip(input_order, predictions_order):
+                        correct, pred = np.array(correct), np.array(pred)
+                        total_neighbor_acc += NeighborAccuracy(correct, pred, (FLAGS.puzzle_height, FLAGS.puzzle_width))
+                        total_direct_acc  += directAccuracy(correct, pred)
+                    print("Avg neighbor acc = ", total_neighbor_acc/len(input_order), "Avg direct Accuracy = ", total_direct_acc/len(input_order))
+                    epoch_data.append([train_loss_value, test_loss_value,total_neighbor_acc/len(input_order), total_direct_acc/len(input_order)])
+                    np.save('epoch_data_' + model_str, epoch_data)
                     # print(encoder_input_data, decoder_input_data, targets_data)
                     # print(inps_)
 
