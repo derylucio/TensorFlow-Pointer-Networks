@@ -30,7 +30,7 @@ flags.DEFINE_integer('rnn_size', 300, 'RNN size.  ') # HYPER-PARAMS
 flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
 flags.DEFINE_integer('puzzle_height', 3, 'Puzzle Height')
 flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
-flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate') # Hyper param
+flags.DEFINE_float('learning_rate', 5e-4, 'Learning rate') # Hyper param
 flags.DEFINE_integer('inter_dim', 4096, 'Dimension of intermediate state - if using fully connected' ) # HYPER-PARAMS
 flags.DEFINE_integer('fc_dim', 512, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
 flags.DEFINE_integer('input_dim', 12288, 'Dimensionality of input images - use if flattened') 
@@ -39,7 +39,7 @@ flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPE
 flags.DEFINE_integer('nb_epochs', 3000, 'the number of epochs to run')
 flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HYPER-PARAMS
 flags.DEFINE_integer('lr_decay_period', 50, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
-flags.DEFINE_float('reg', 1e-2, 'regularization on model parameters') # HYPER-PARAMS
+flags.DEFINE_float('reg', 1e-1, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
@@ -69,20 +69,30 @@ class PointerNetwork(object):
             self.learning_rate * learning_rate_decay_factor)
         self.global_step = tf.Variable(0, trainable=False)
 
+        if not bidirect:
+            cell = tf.contrib.rnn.GRUCell(size)
+            decoder_cell = tf.contrib.rnn.GRUCell(size)
+        else:
+            cell_fw, cell_bw  = tf.contrib.rnn.GRUCell(size), tf.contrib.rnn.GRUCell(size)
+            decoder_cell = tf.contrib.rnn.GRUCell(2*size)
+        if num_layers > 1:
+            cell = tf.contrib.rnn.MultiRNNCell([single_cell] * num_layers)
+
+
 
         self.encoder_inputs = []
         self.decoder_inputs = []
         self.decoder_targets = []
         self.target_weights = []
         for i in range(max_len):
-            size = [batch_size, input_size] if not use_cnn else [batch_size, image_dim, image_dim, 3]
+            i_size = [batch_size, input_size] if not use_cnn else [batch_size, image_dim, image_dim, 3]
             self.encoder_inputs.append(tf.placeholder(
-                tf.float32, size, name="EncoderInput%d" % i))
+                tf.float32, i_size, name="EncoderInput%d" % i))
 
         for i in range(max_len + 1):
-            size = [batch_size, input_size] if not use_cnn else [batch_size, image_dim, image_dim, 3]
+            i_size = [batch_size, input_size] if not use_cnn else [batch_size, image_dim, image_dim, 3]
             self.decoder_inputs.append(tf.placeholder(
-                tf.float32, size, name="DecoderInput%d" % i))
+                tf.float32, i_size, name="DecoderInput%d" % i))
             self.decoder_targets.append(tf.placeholder(
                 tf.float32, [batch_size, max_len + 1], name="DecoderTarget%d" % i))  # one hot
             self.target_weights.append(tf.placeholder(
@@ -105,7 +115,6 @@ class PointerNetwork(object):
             all_out = tf.unstack(features)
             self.proj_encoder_inputs = all_out[:num_encoder]
             self.proj_decoder_inputs = all_out[num_encoder:]
-
         else:
             with vs.variable_scope("projector_scope"):
                 W1 = vs.get_variable("W1", [input_size, inter_dim])
@@ -130,23 +139,19 @@ class PointerNetwork(object):
                     self.proj_decoder_inputs.append(out)
 
         # Need for attention
-        cell = tf.contrib.rnn.GRUCell(size)
-        decoder_cell = tf.contrib.rnn.GRUCell(size)
-        if num_layers > 1:
-            cell = tf.contrib.rnn.MultiRNNCell([single_cell] * num_layers)
-
         if not bidirect:
             encoder_outputs, final_state = tf.contrib.rnn.static_rnn(cell, self.proj_encoder_inputs, dtype=tf.float32)
         else:
-            encoder_outputs, output_state_fw, output_state_bw = tf.contrib.rnn.static_bidirectional_rnn(tf.contrib.rnn.GRUCell(size), tf.contrib.rnn.GRUCell(size), self.proj_encoder_inputs, dtype=tf.float32)
-            final_state = tf.concat(output_state_fw, output_state_bw, axis=1)
+            encoder_outputs, output_state_fw, output_state_bw = tf.contrib.rnn.static_bidirectional_rnn(cell_fw, cell_bw, self.proj_encoder_inputs, dtype=tf.float32)
+            final_state = tf.concat([output_state_fw, output_state_bw], axis=1)
 
 
+        output_size = size if not bidirect else 2*size
         # Need a dummy output to point on it. End of decoding.
-        encoder_outputs = [tf.zeros([FLAGS.batch_size, cell.output_size])] + encoder_outputs
+        encoder_outputs = [tf.zeros([FLAGS.batch_size, output_size])] + encoder_outputs
 
         # First calculate a concatenation of encoder outputs to put attention on.
-        top_states = [tf.reshape(e, [-1, 1, cell.output_size])
+        top_states = [tf.reshape(e, [-1, 1, output_size])
                       for e in encoder_outputs]
         attention_states = tf.concat(axis=1, values=top_states)
 
@@ -302,7 +307,7 @@ class PointerNetwork(object):
 
 def getModelStr():
     model_str = "CNN_" if FLAGS.use_cnn else "MLP_"
-    model_str += "rnn_size-" + str(FLAGS.rnn_size) + "_learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) + "_reg-" + str(FLAGS.reg) + "_optimizer-" + FLAGS.optimizer
+    model_str += "rnn_size-" + str(FLAGS.rnn_size) + "_learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) + "_reg-" + str(FLAGS.reg) + "_optimizer-" + FLAGS.optimizer + "_bidirect-" +  str(FLAGS.bidirect)
     if FLAGS.tune_vgg: model_str += '_tuneVGG'
     return model_str
 
