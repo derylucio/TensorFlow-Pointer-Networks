@@ -13,30 +13,41 @@ from pointer import pointer_decoder
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.contrib.rnn.python.ops import core_rnn_cell_impl
 from cnn import CNN_FeatureExtractor
+import random
+import numpy as np
+import os
+import sys 
+sys.path.append("utils/")
+from evaluation import NeighborAccuracy, directAccuracy  
+RAND_SEED = 1234
+CKPT_DIR = "model_ckpts"
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_integer('batch_size', 16, 'Batch size')
+flags.DEFINE_integer('batch_size', 20, 'Batch size')
 flags.DEFINE_integer('max_steps', 9, 'Maximum number of pieces in puzzle')
-flags.DEFINE_integer('rnn_size', 100, 'RNN size.  ') # HYPER-PARAMS
+flags.DEFINE_integer('rnn_size', 300, 'RNN size.  ') # HYPER-PARAMS
 flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
 flags.DEFINE_integer('puzzle_height', 3, 'Puzzle Height')
 flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
-flags.DEFINE_float('learning_rate', 5e-4, 'Learning rate') # Hyper param
+flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate') # Hyper param
 flags.DEFINE_integer('inter_dim', 4096, 'Dimension of intermediate state - if using fully connected' ) # HYPER-PARAMS
-flags.DEFINE_integer('fc_dim', 256, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
+flags.DEFINE_integer('fc_dim', 512, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
 flags.DEFINE_integer('input_dim', 12288, 'Dimensionality of input images - use if flattened') 
 flags.DEFINE_integer('vgg_dim', 2048, 'Dimensionality flattnened vgg pool feature') 
 flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPER-PARAMS
-flags.DEFINE_integer('nb_epochs', 100, 'the number of epochs to run')
+flags.DEFINE_integer('nb_epochs', 1000, 'the number of epochs to run')
 flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HYPER-PARAMS
 flags.DEFINE_integer('lr_decay_period', 50, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
-flags.DEFINE_float('"reg"', 5e-2, 'regularization on model parameters') # HYPER-PARAMS
+flags.DEFINE_float('reg', 0.0, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
+flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
+flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
+flags.DEFINE_bool('bidirect', True, "Whether to use a bidirectional rnn for encoder")
 
 class PointerNetwork(object):
     def __init__(self, max_len, input_size, size, num_layers, max_gradient_norm, batch_size, learning_rate,
-                 learning_rate_decay_factor, inter_dim, fc_dim, use_cnn, image_dim, vgg_dim):
+                 learning_rate_decay_factor, inter_dim, fc_dim, use_cnn, image_dim, vgg_dim, bidirect):
         """Create the network. A simplified network that handles only sorting.
         
         Args:
@@ -123,7 +134,12 @@ class PointerNetwork(object):
                     self.proj_decoder_inputs.append(out)
 
         # Need for attention
-        encoder_outputs, final_state = tf.contrib.rnn.static_rnn(cell, self.proj_encoder_inputs, dtype=tf.float32)
+        if not bidirect:
+            encoder_outputs, final_state = tf.contrib.rnn.static_rnn(cell, self.proj_encoder_inputs, dtype=tf.float32)
+        else:
+            encoder_outputs, output_state_fw, output_state_bw = tf.contrib.rnn.static_rnn(cell, self.proj_encoder_inputs, dtype=tf.float32)
+            final_state = tf.concat(output_state_fw, output_state_bw, axis=1)
+
 
         # Need a dummy output to point on it. End of decoding.
         encoder_outputs = [tf.zeros([FLAGS.batch_size, cell.output_size])] + encoder_outputs
@@ -175,7 +191,7 @@ class PointerNetwork(object):
             return tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate)
 
 
-    def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn):
+    def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, model_str, load_frm_ckpts, tune_vgg=False):
 
         loss = 0.0
         for output, target, weight in zip(self.outputs, self.decoder_targets, self.target_weights):
@@ -184,10 +200,10 @@ class PointerNetwork(object):
         loss = tf.reduce_mean(loss)
         reg_loss = 0
         var_list = []
-
         for tf_var in tf.trainable_variables():
             if not ('Bias' in tf_var.name):
-                if use_cnn and not('vgg_16' in tf_var.name):
+                if use_cnn and ( not ('vgg_16' in tf_var.name) or tune_vgg):
+                    if 'vgg_16' in tf_var.name : print('Added vgg weights for training')
                     var_list.append(tf_var)
                     reg_loss += tf.nn.l2_loss(tf_var)
                 else:
@@ -195,28 +211,42 @@ class PointerNetwork(object):
                     reg_loss += tf.nn.l2_loss(tf_var)
         
         loss += reg * reg_loss
+        tf.summary.scalar('train_loss', loss) # Sanya
 
         test_loss = 0.0
         for output, target, weight in zip(self.predictions, self.decoder_targets, self.target_weights):
             test_loss += tf.nn.softmax_cross_entropy_with_logits(logits=output, labels=target) * weight
 
         test_loss = tf.reduce_mean(test_loss)
+        tf.summary.scalar('test_loss', test_loss) # Sanya
 
         optimizer = self.getOptimizer(optim) #tf.train.AdamOptimizer()
         train_op = optimizer.minimize(loss)
+
+        print("Adding Histogram of Training Variables.")
+        for var in tf.trainable_variables():
+            tf.summary.histogram(var.name, var)
 
         train_loss_value = 0.0
         test_loss_value = 0.0
 
         correct_order = 0
         all_order = 0
-
-        with tf.Session() as sess:
+        epoch_data = []
+        ckpt_file = CKPT_DIR + "/" + model_str + "/" + model_str
+        saver = tf.train.Saver()
+        config = tf.ConfigProto(allow_soft_placement=True)
+        with tf.Session(config=config) as sess:
             merged = tf.summary.merge_all()
-            writer = tf.summary.FileWriter("/tmp/pointer_logs", sess.graph)
+            train_writer = tf.summary.FileWriter("/tmp/" + model_str + "/train", sess.graph)
+            test_writer = tf.summary.FileWriter("/tmp/" + model_str + "/test", sess.graph)
+
             init = tf.global_variables_initializer()
             sess.run(init)
             if use_cnn: self.inputfn(sess)
+            if(load_frm_ckpts): 
+                print("Restoring Ckpts at : ", ckpt_file)
+                saver.restore(sess, ckpt_file)
             for i in range(nb_epochs):
                 if i > 0 and (i % lr_decay_period == 0):
                     sess.run([self.learning_rate_decay_op])
@@ -227,8 +257,9 @@ class PointerNetwork(object):
                 # Train
                 feed_dict = self.create_feed_dict(
                     encoder_input_data, decoder_input_data, targets_data)
-                d_x, l = sess.run([loss, train_op], feed_dict=feed_dict)
+                d_x, l, summary = sess.run([loss, train_op, merged], feed_dict=feed_dict)
                 train_loss_value = d_x #0.9 * train_loss_value + 0.1 * d_x
+                train_writer.add_summary(summary, i)
 
                 if i % 1 == 0:
                     print('Step: %d' % i)
@@ -243,40 +274,54 @@ class PointerNetwork(object):
 
                 predictions = sess.run(self.predictions, feed_dict=feed_dict)
 
-                test_loss_value = sess.run(test_loss, feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)
+                test_loss_value, summary = sess.run([test_loss, merged], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)
+                test_writer.add_summary(summary, i)
 
                 if i % 1 == 0:
                     print("Test: ", test_loss_value)
 
                 predictions_order = np.concatenate([np.expand_dims(prediction, 0) for prediction in predictions])
-                predictions_order = np.argmax(predictions_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps]
+                predictions_order = np.argmax(predictions_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
 
                 input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
-                input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 1:] - 1
-                # input_order = np.concatenate(
-                #     [np.expand_dims(encoder_input_data_, 0) for encoder_input_data_ in encoder_input_data])
-                # input_order = np.argsort(input_order, 0).squeeze().transpose(1, 0) + 1
-
-
-                correct_order += np.sum(np.all(predictions_order == input_order,
-                                               axis=1))
-                all_order += FLAGS.batch_size
-
-                if i % 1 == 0:
-                    print('Correct order / All order: %f' % (correct_order / all_order))
-                    correct_order = 0
-                    all_order = 0
-
+                input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
+                print("Here : ", np.shape(input_order), np.shape(predictions_order))
+                if i % 20 == 0 :
+                    saver.save(sess, ckpt_file)
+                    total_neighbor_acc = 0.0
+                    total_direct_acc = 0.0
+                    for correct, pred in zip(input_order, predictions_order):
+                        correct, pred = np.array(correct), np.array(pred)
+                        total_neighbor_acc += NeighborAccuracy(correct, pred, (FLAGS.puzzle_height, FLAGS.puzzle_width))
+                        total_direct_acc  += directAccuracy(correct, pred)
+                    print("Avg neighbor acc = ", total_neighbor_acc/len(input_order), "Avg direct Accuracy = ", total_direct_acc/len(input_order))
+                    epoch_data.append([train_loss_value, test_loss_value,total_neighbor_acc/len(input_order), total_direct_acc/len(input_order)])
+                    np.save('epoch_data_' + model_str, epoch_data)
                     # print(encoder_input_data, decoder_input_data, targets_data)
                     # print(inps_)
 
+def getModelStr():
+    model_str = "CNN_" if FLAGS.use_cnn else "MLP_"
+    model_str += "rnn_size-" + str(FLAGS.rnn_size) + "_learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) + "_reg-" + str(FLAGS.reg) + "_optimizer-" + FLAGS.optimizer
+    if FLAGS.tune_vgg: model_str += '_tuneVGG'
+    return model_str
 
 if __name__ == "__main__":
     # TODO: replace other with params
+    model_str = getModelStr()
+    print(model_str)
+    if not os.path.isdir(CKPT_DIR):
+        print('Creating ckpt directory')
+        os.mkdir(CKPT_DIR)
+    if not os.path.isdir(CKPT_DIR + "/" + model_str):
+        print('Creating ckpt directory for : ', model_str)
+        os.mkdir(CKPT_DIR + "/" + model_str)
+    random.seed(RAND_SEED)
+    np.random.seed(RAND_SEED)
     with tf.device('/gpu:0'):
         pointer_network = PointerNetwork(FLAGS.max_steps, FLAGS.input_dim, FLAGS.rnn_size,
                                          1, 5, FLAGS.batch_size, FLAGS.learning_rate, \
                                         FLAGS.lr_decay, FLAGS.inter_dim, \
-                                        FLAGS.fc_dim, FLAGS.use_cnn, FLAGS.image_dim, FLAGS.vgg_dim)
+                                        FLAGS.fc_dim, FLAGS.use_cnn, FLAGS.image_dim, FLAGS.vgg_dim, FLAGS.bidirect)
         dataset = DataGenerator(FLAGS.puzzle_width, FLAGS.puzzle_width, FLAGS.input_dim, FLAGS.use_cnn, FLAGS.image_dim)
-        pointer_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn)
+        pointer_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn, model_str,FLAGS.load_from_ckpts, tune_vgg=FLAGS.tune_vgg)

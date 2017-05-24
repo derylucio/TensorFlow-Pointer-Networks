@@ -48,7 +48,7 @@ class DataGenerator(object):
             if batch_size*self.curr_test_pos >= len(x): self.curr_test_pos = 0
         pos = self.curr_train_pos if train_mode else self.curr_test_pos
         x, y = x[pos*batch_size:(pos  + 1)*batch_size], y[pos*batch_size:(pos  + 1)*batch_size]
-
+	
         for b in range(batch_size):
             for i in range(N):
                 reader_input_batch[i][b] = x[b][i]
@@ -61,10 +61,9 @@ class DataGenerator(object):
 
             # Points to the stop symbol
             writer_outputs_batch[N][b, 0] = 1.0
-
         return reader_input_batch, decoder_input_batch, writer_outputs_batch
     
 
-# datagen = DataGenerator(2, 2, 12288)
-# r_in, d_in, r_out  = datagen.next_batch(5, 4, train_mode=False)
-# print(np.shape(r_in), np.shape(d_in), np.shape(r_out))
+#datagen = DataGenerator(2, 2, 12288, False, 64)
+#r_in, d_in, r_out  = datagen.next_batch(2, 4, train_mode=False)
+#print(np.argmax(np.transpose(r_out, (1, 0, 2)), axis=2) - 1)
