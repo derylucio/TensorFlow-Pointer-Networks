@@ -22,15 +22,15 @@ VAL_DIR = "data2/val"
 TEST_DIR = "data2/test"
 
 POOL_SIZE = 8		
-NUM_CATS = 2
 
+categories = sorted([os.path.basename(cat) for cat in glob.glob(TRAIN_DIR + "/*")])
+NUM_CATS = 2 # len(categories)
 assert(POOL_SIZE >= min(NUM_TRAIN, NUM_TEST, NUM_VAL))		# Crashes otherwise. 
 # For now, assert that this is evenly divisible. 
 assert NUM_TEST % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_TRAIN)
 assert NUM_VAL % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_VAL)
 assert NUM_TRAIN % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_TRAIN)
-categories = sorted([os.path.basename(cat) for cat in glob.glob(TRAIN_DIR + "/*")])
-print len(categories)
+
 
 
 def getData(puzzle_height, puzzle_width, use_cnn=False):
@@ -85,7 +85,6 @@ def shuffleAndReshapeData(args, keep_shape=True):
 
 	print("Shuffling Data.")
 	idx_shuff = np.array(np.random.permutation(X.shape[0]))
-	print(idx_shuff)
 	X_shuff = X[idx_shuff]
 	fnames_shuff = fnames[idx_shuff]
 
@@ -93,10 +92,6 @@ def shuffleAndReshapeData(args, keep_shape=True):
 	if len(cats) > 0: 
 		cats_shuff = cats[idx_shuff]
 		cats_onehot_shuff = np.where(cats_shuff[:,np.newaxis] == categories, 1, 0)
-		print("===============")
-		print(cats_shuff)
-		print(np.argmax(cats_onehot_shuff, axis=0))
-		print("===============")
 
 	for i in np.arange(X_shuff.shape[0]):
 		np.random.shuffle(y_shuff[i])
@@ -107,12 +102,7 @@ def shuffleAndReshapeData(args, keep_shape=True):
 		X = X.reshape(N, L, -1)		# TODO: Update once verified. 
 		print("Reshaped to new shape {0}.".format(X.shape))
 	
-	y_onehot_shuff = np.where(y_shuff[:,:,np.newaxis] == np.arange(L), 1, 0) 
-	# assert(np.sum(np.argmax(y_onehot_shuff) - y_shuff) < 0.5)
-	print("*********")
-	print(np.argmax(y_onehot_shuff, axis=0))
-	print(y_shuff)
-	print("*********")
+	y_onehot_shuff = np.where(y_shuff[:,:,np.newaxis] == np.arange(L), 1, 0)
 	seq = np.ones((len(X_shuff))) * L
 	
 	# TODO: Fix cats_shuff,
@@ -120,7 +110,7 @@ def shuffleAndReshapeData(args, keep_shape=True):
 
 def loadImages(directory, N, H, W, dims=(32,32,3)): 
 	'''
-	Loads images from a specific directory (data/(train|val|test)/*) and resizes
+	Loads images from a specific directory ('data/(train|val|test)/*'') and resizes
 	the images. 
 	Returns X, categories, filenames.
 	'''
@@ -175,14 +165,14 @@ def loadImages(directory, N, H, W, dims=(32,32,3)):
 	return np.array(X), np.array(cats), np.array(fnames)
 
 ######### TESTING ###############
-data = getData(3, 3)
-X_train, y_onehot_train, cats_train, seq_train, fnames_train = data['train']
-X_val, y_onehot_val, cats_val, seq_val, fnames_val = data['val']
-X_test, y_onehot_test, cats_test, seq_test, fnames_test = data['test']
+# data = getData(3, 3)
+# X_train, y_onehot_train, cats_train, seq_train, fnames_train = data['train']
+# X_val, y_onehot_val, cats_val, seq_val, fnames_val = data['val']
+# X_test, y_onehot_test, cats_test, seq_test, fnames_test = data['test']
 
-for name, tup in data.items():
-	print(name)
-	X, y, cats, seq, fnames = tup
-	print(X.shape, y.shape, seq.shape)
-	print(cats)
+# for name, tup in data.items():
+# 	print(name)
+# 	X, y, cats, seq, fnames = tup
+# 	print(X.shape, y.shape, seq.shape)
+# 	print(np.sum(cats, axis=0))
 #########  DONE   ###############
