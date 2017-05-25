@@ -34,6 +34,7 @@ def splitImage(numRows, numCols, image, piece_dims=(32,32,3)):
     # resized_img = np.array(resize(image, (large_width, large_height, large_depth), 
     #                         preserve_range=True, mode='reflect')).astype(dtype=np.uint8)
     resized_img = image
+    #print(np.shape(image))
     hsplits = np.array(np.split(resized_img, piece_width * np.arange(1, numCols), axis=1))
     vsplits = np.array(np.split(hsplits, piece_height * np.arange(1, numRows), axis=1)) # Not 1 since we introduce one more dim.
     split_images = vsplits.reshape(-1, *piece_dims)

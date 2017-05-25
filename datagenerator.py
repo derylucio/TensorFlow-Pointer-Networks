@@ -12,26 +12,29 @@ sys.path.append('utils/')
 import fitness_vectorized as fv
 
 
-NUM_TEST = 200
-NUM_TRAIN = 1000
-NUM_VAL = 100
+NUM_TEST = 512
+NUM_TRAIN = 10240
+NUM_VAL = 1024
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(64, 64, 3)
 
-TRAIN_DIR = "data/train"
-VAL_DIR = "data/val"
-TEST_DIR = "data/test"
+TRAIN_DIR = "data/data_train"
+VAL_DIR = "data/data_val"
+TEST_DIR = "data/data_test"
+
+#for vgg preprocessing
+_R_MEAN = 123.68
+_G_MEAN = 116.78
+_B_MEAN = 103.94
 
 POOL_SIZE = 8		
 
 categories = sorted([os.path.basename(cat) for cat in glob.glob(TRAIN_DIR + "/*")])
 NUM_CATS = len(categories)
-
-assert(POOL_SIZE >= min(NUM_TRAIN, NUM_TEST, NUM_VAL))		# Crashes otherwise. 
 # For now, assert that this is evenly divisible. 
-assert NUM_TEST % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_TRAIN)
-assert NUM_VAL % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_VAL)
-assert NUM_TRAIN % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_TRAIN)
+#assert NUM_TEST % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_TRAIN)
+#assert NUM_VAL % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_VAL)
+#assert NUM_TRAIN % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_TRAIN)
 
 
 
@@ -49,7 +52,7 @@ def getData(puzzle_height, puzzle_width, use_cnn=False):
 	train = loadImages(TRAIN_DIR, NUM_TRAIN, H, W, dims=DIMS)
 	val = loadImages(VAL_DIR, NUM_VAL, H, W, dims=DIMS)
 	test = loadImages(TEST_DIR, NUM_TEST, H, W, dims=DIMS)
-	
+	print("Train : ", np.shape(train[0]), " Test : ", np.shape(test[0]), " Val : ", np.shape(val[0]))
 	train = shuffleAndReshapeData(train, keep_shape=use_cnn)
 	val = shuffleAndReshapeData(val, keep_shape=use_cnn)
 	test = shuffleAndReshapeData(test, keep_shape=use_cnn)
@@ -67,6 +70,7 @@ def getReshapedImages(args):
 		large_width, large_height, large_depth = H * dims[0], W * dims[1], dims[2]
 		resized_img = np.array(resize(img, (large_width, large_height, large_depth), preserve_range=True, mode='reflect'))#.astype(dtype=np.uint8)
 		new_list.append(resized_img)
+		#print(np.shape(resized_img))
 	return new_list
 
 def readImg(filename):
@@ -129,8 +133,9 @@ def loadImages(directory, N, H, W, dims=(32,32,3)):
 			fnames.append(filename)			
 	else:
 		print("Directory divides into categories.")
-		num_per_cat = N / NUM_CATS
+		num_per_cat = int(N / NUM_CATS)
 		img_names = []
+		#print(num_per_cat)
 		# Seems more efficient to iterate over category dirs and get exact number
 		# of imgs per category. Hence, not using glob to load all imgs to disk.  
 		for dirname in sorted(os.listdir(directory)):
@@ -153,13 +158,18 @@ def loadImages(directory, N, H, W, dims=(32,32,3)):
 	new_list = []
 	for result in results:
 		new_list.extend(result)
-
+	#print(np.shape(new_list))
 	print("Normalizing Images")
 	imgs = np.array(new_list)
-	imgs -= np.mean(imgs, axis = 0)
-	imgs /= np.std(imgs, axis = 0)
+	#imgs -= np.mean(imgs, axis = 0)
+	#imgs /= np.std(imgs, axis = 0)
 	for img in imgs:
+		#print(np.shape(img))
 		img = img.astype(dtype=np.float64)
+		img[:, :, 0] -= _R_MEAN
+		img[:, :, 1] -= _G_MEAN
+		img[:, :, 2] -= _B_MEAN
+		#print(np.shape(img))
 		X.append(np.array(fv.splitImage(H, W, img, dims)))
 
 	print("Loaded %d Images from %s" % (len(X), directory))
