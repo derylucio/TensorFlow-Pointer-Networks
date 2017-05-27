@@ -40,7 +40,7 @@ from tensorflow.contrib.rnn.python.ops import core_rnn_cell_impl
 
 
 def pointer_decoder(decoder_inputs, initial_state, attention_states, cell,
-                    feed_prev=True, dtype=dtypes.float32, scope=None):
+                    feed_prev=False, one_hot=False,  dtype=dtypes.float32, scope=None, cell_type="LSTM"):
     """RNN decoder with pointer net for the sequence-to-sequence model.
     Args:
       decoder_inputs: a list of 2D Tensors [batch_size x cell.input_size].
@@ -104,17 +104,24 @@ def pointer_decoder(decoder_inputs, initial_state, attention_states, cell,
 
         attns.set_shape([None, attn_size])
         inps = []
-        print(decoder_inputs[0].get_shape(), initial_state.get_shape(), attention_states.get_shape())
+        attn_inps = tf.stack(decoder_inputs)
+        attn_inps = tf.transpose(attn_inps, perm=[1, 0, 2])
+        attn_inps = tf.reshape(attn_inps, [-1, attn_length, input_size])
         for i in range(len(decoder_inputs)):
             if i > 0:
                 vs.get_variable_scope().reuse_variables()
             inp = decoder_inputs[i]
 
             if feed_prev and i > 0:
-                inp = tf.stack(decoder_inputs)
-                inp = tf.transpose(inp, perm=[1, 0, 2])
-                inp = tf.reshape(inp, [-1, attn_length, input_size])
-                inp = tf.reduce_sum(inp * tf.reshape(tf.nn.softmax(output), [-1, attn_length, 1]), 1) # might make more sense to feed in 1-hot
+                if not one_hot:
+                    #print('inside not one hot')
+                    inp = tf.reduce_sum(attn_inps * tf.reshape(tf.nn.softmax(output), [-1, attn_length, 1]), 1) # might make more sense to feed in 1-hot
+                else:
+                    #print('inside direct feed')
+                    inds = tf.cast(tf.argmax(output, 1),  tf.int32)
+                    rep_first_indices = tf.range(tf.shape(inds)[0])
+                    inds = tf.stack([rep_first_indices, inds], axis=1)
+                    inp = tf.gather_nd(attn_inps, inds)
                 inp = tf.stop_gradient(inp)
                 inps.append(inp)
 

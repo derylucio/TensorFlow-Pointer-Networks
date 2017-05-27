@@ -26,24 +26,28 @@ flags = tf.app.flags
 FLAGS = flags.FLAGS
 flags.DEFINE_integer('batch_size', 64, 'Batch size')
 flags.DEFINE_integer('max_steps', 9, 'Maximum number of pieces in puzzle')
-flags.DEFINE_integer('rnn_size', 300, 'RNN size.  ') # HYPER-PARAMS
+flags.DEFINE_integer('rnn_size', 400, 'RNN size.  ') # HYPER-PARAMS
 flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
 flags.DEFINE_integer('puzzle_height', 3, 'Puzzle Height')
 flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
 flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate') # Hyper param
 flags.DEFINE_integer('inter_dim', 4096, 'Dimension of intermediate state - if using fully connected' ) # HYPER-PARAMS
-flags.DEFINE_integer('fc_dim', 512, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
+flags.DEFINE_integer('fc_dim', 256, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
 flags.DEFINE_integer('input_dim', 12288, 'Dimensionality of input images - use if flattened') 
 flags.DEFINE_integer('vgg_dim', 2048, 'Dimensionality flattnened vgg pool feature') 
 flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPER-PARAMS
-flags.DEFINE_integer('nb_epochs', 4000, 'the number of epochs to run')
+flags.DEFINE_integer('nb_epochs', 10000, 'the number of epochs to run')
 flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HYPER-PARAMS
 flags.DEFINE_integer('lr_decay_period', 100, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
-flags.DEFINE_float('reg', 0.0, 'regularization on model parameters') # HYPER-PARAMS
+flags.DEFINE_float('reg', 5e-3, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
 flags.DEFINE_bool('bidirect', True, "Whether to use a bidirectional rnn for encoder")
+flags.DEFINE_string('cell_type', 'LSTM', 'The type of RNN cell to use for the pointer network') # HYPER-PARAMS
+flags.DEFINE_bool('encoder_attn_1hot', False, 'Whether to use linear combination of attention, or argmax of attention to choose input')
+
+
 
 class PointerNetwork(object):
     def __init__(self, max_len, input_size, size, num_layers, max_gradient_norm, batch_size, learning_rate,
@@ -70,11 +74,11 @@ class PointerNetwork(object):
         self.global_step = tf.Variable(0, trainable=False)
 
         if not bidirect:
-            cell = tf.contrib.rnn.GRUCell(size)
-            decoder_cell = tf.contrib.rnn.GRUCell(size)
+            cell = self.getCell(size)
+            decoder_cell = self.getCell(size) 
         else:
-            cell_fw, cell_bw  = tf.contrib.rnn.GRUCell(size), tf.contrib.rnn.GRUCell(size)
-            decoder_cell = tf.contrib.rnn.GRUCell(2*size)
+            cell_fw, cell_bw  = self.getCell(size), self.getCell(size)
+            decoder_cell = self.getCell(size*2) 
         if num_layers > 1:
             cell = tf.contrib.rnn.MultiRNNCell([single_cell] * num_layers)
 
@@ -141,15 +145,22 @@ class PointerNetwork(object):
         # Need for attention
         if not bidirect:
             encoder_outputs, final_state = tf.contrib.rnn.static_rnn(cell, self.proj_encoder_inputs, dtype=tf.float32)
+            #if FLAGS.cell_type == "LSTM":
+            #    _, final_state = tf.unstack(final_state, axis=0)
         else:
             encoder_outputs, output_state_fw, output_state_bw = tf.contrib.rnn.static_bidirectional_rnn(cell_fw, cell_bw, self.proj_encoder_inputs, dtype=tf.float32)
-            final_state = tf.concat([output_state_fw, output_state_bw], axis=1)
-
+            if FLAGS.cell_type == "LSTM":
+                o_fw_c, o_fw_m  = tf.unstack(output_state_fw, axis=0)
+                o_bw_c, o_bw_m  = tf.unstack(output_state_bw, axis=0)
+                o_c =  tf.concat([o_fw_c, o_bw_c], axis=1)
+                o_m =  tf.concat([o_fw_m, o_bw_m], axis=1)  
+                final_state = tf.contrib.rnn.LSTMStateTuple(o_c, o_m)
+            else:
+                final_state = tf.concat([output_state_fw, output_state_bw], axis=1)
 
         output_size = size if not bidirect else 2*size
         # Need a dummy output to point on it. End of decoding.
-        encoder_outputs = [tf.zeros([FLAGS.batch_size, output_size])] + encoder_outputs
-
+        encoder_outputs = [tf.zeros([FLAGS.batch_size, output_size])] + encoder_outputs 
         # First calculate a concatenation of encoder outputs to put attention on.
         top_states = [tf.reshape(e, [-1, 1, output_size])
                       for e in encoder_outputs]
@@ -157,11 +168,11 @@ class PointerNetwork(object):
 
         with tf.variable_scope("decoder"):
             outputs, states, _ = pointer_decoder(
-                self.proj_decoder_inputs, final_state, attention_states, decoder_cell)
-
+                self.proj_decoder_inputs, final_state, attention_states, decoder_cell, cell_type=FLAGS.cell_type)
+        #print("DECODING")
         with tf.variable_scope("decoder", reuse=True):
             predictions, _, inps = pointer_decoder(
-                self.proj_decoder_inputs, final_state, attention_states, decoder_cell, feed_prev=True)
+                self.proj_decoder_inputs, final_state, attention_states, decoder_cell, feed_prev=True, one_hot=FLAGS.encoder_attn_1hot,  cell_type=FLAGS.cell_type)
 
         self.predictions = predictions
 
@@ -169,6 +180,12 @@ class PointerNetwork(object):
         self.inps = inps
         # move code below to a separate function as in TF examples
 
+    def getCell(self, size):
+        if FLAGS.cell_type == "LSTM":
+           return tf.contrib.rnn.LSTMCell(size)
+        else:
+           return tf.contrib.rnn.GRUCell(size)
+           
     def create_feed_dict(self, encoder_input_data, decoder_input_data, decoder_target_data):
         feed_dict = {}
         for placeholder, data in zip(self.encoder_inputs, encoder_input_data):
@@ -202,8 +219,7 @@ class PointerNetwork(object):
         loss = 0.0
         for output, target, weight in zip(self.outputs, self.decoder_targets, self.target_weights):
             loss += tf.nn.softmax_cross_entropy_with_logits(logits=output, labels=target) * weight
-
-        loss = tf.reduce_mean(loss)
+        loss = tf.reduce_mean(loss) / (FLAGS.max_steps  + 1)
         reg_loss = 0
         var_list = []
         for tf_var in tf.trainable_variables():
@@ -223,7 +239,7 @@ class PointerNetwork(object):
         for output, target, weight in zip(self.predictions, self.decoder_targets, self.target_weights):
             test_loss += tf.nn.softmax_cross_entropy_with_logits(logits=output, labels=target) * weight
 
-        test_loss = tf.reduce_mean(test_loss)
+        test_loss = tf.reduce_mean(test_loss) / (FLAGS.max_steps  + 1)
         tf.summary.scalar('test_loss', test_loss) # Sanya
 
         optimizer = self.getOptimizer(optim) #tf.train.AdamOptimizer()
@@ -307,8 +323,9 @@ class PointerNetwork(object):
 
 def getModelStr():
     model_str = "CNN_" if FLAGS.use_cnn else "MLP_"
-    model_str += "rnn_size-" + str(FLAGS.rnn_size) + "_learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) + "_reg-" + str(FLAGS.reg) + "_optimizer-" + FLAGS.optimizer + "_bidirect-" +  str(FLAGS.bidirect)
+    model_str += "rnn_size-" + str(FLAGS.rnn_size) + "_learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) + "_reg-" + str(FLAGS.reg) + "_optimizer-" + FLAGS.optimizer + "_bidirect-" +  str(FLAGS.bidirect) + "_cell-type-" + FLAGS.cell_type
     if FLAGS.tune_vgg: model_str += '_tuneVGG'
+    if FLAGS.encoder_attn_1hot: model_str += '_used-attn-one-hot'
     return model_str
 
 if __name__ == "__main__":
