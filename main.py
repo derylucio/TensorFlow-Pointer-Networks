@@ -43,9 +43,10 @@ flags.DEFINE_float('reg', 5e-3, 'regularization on model parameters') # HYPER-PA
 flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
-flags.DEFINE_bool('bidirect', True, "Whether to use a bidirectional rnn for encoder")
+flags.DEFINE_bool('bidirect', True, "Whether to use a bidirectional rnn for encoder") # SANYA testing
 flags.DEFINE_string('cell_type', 'LSTM', 'The type of RNN cell to use for the pointer network') # HYPER-PARAMS
 flags.DEFINE_bool('encoder_attn_1hot', False, 'Whether to use linear combination of attention, or argmax of attention to choose input')
+flags.DEFINE_integer('num_layers', 3, 'Number of layers for the RNN') # SANYA testing
 
 
 
@@ -73,17 +74,26 @@ class PointerNetwork(object):
             self.learning_rate * learning_rate_decay_factor)
         self.global_step = tf.Variable(0, trainable=False)
 
-        if not bidirect:
-            cell = self.getCell(size)
-            decoder_cell = self.getCell(size) 
-        else:
-            cell_fw, cell_bw  = self.getCell(size), self.getCell(size)
-            decoder_cell = self.getCell(size*2) 
-        if num_layers > 1:
-            cell = tf.contrib.rnn.MultiRNNCell([single_cell] * num_layers)
+	cell, cell_fw, cell_bw = None, None, None
+        
+# https://github.com/devsisters/pointer-network-tensorflow/blob/master/model.py#L148 
+	if num_layers == 1:
+	    if bidirect:
+		cell_fw, cell_bw = self.getCell(size), self.getCell(size)
+		decoder_cell = self.getCell(size * 2)
+            else:
+		cell = self.getCell(size)
+		decoder_cell = self.getCell(size)
 
-
-
+	elif num_layers > 1:
+            if bidirect:
+		multicell_fw = tf.contrib.rnn.MultiRNNCell([self.getCell(size) for _ in range(num_layers)], state_is_tuple=False)
+		multicell_bw = tf.contrib.rnn.MultiRNNCell([self.getCell(size) for _ in range(num_layers)], state_is_tuple=False)
+		decoder_cell = self.getCell(size * 2 * num_layers)
+	    else:
+		cell = tf.contrib.rnn.MultiRNNCell([self.getCell(size) for _ in range(num_layers)], state_is_tuple=False)
+		decoder_cell = self.getCell(size * num_layers)
+	
         self.encoder_inputs = []
         self.decoder_inputs = []
         self.decoder_targets = []
@@ -144,26 +154,29 @@ class PointerNetwork(object):
 
         # Need for attention
         if not bidirect:
-            encoder_outputs, final_state = tf.contrib.rnn.static_rnn(cell, self.proj_encoder_inputs, dtype=tf.float32)
-            #if FLAGS.cell_type == "LSTM":
-            #    _, final_state = tf.unstack(final_state, axis=0)
+            print("Not birectional.")
+	    encoder_outputs, final_state = tf.contrib.rnn.static_rnn(cell, self.proj_encoder_inputs, dtype=tf.float32)
         else:
-            encoder_outputs, output_state_fw, output_state_bw = tf.contrib.rnn.static_bidirectional_rnn(cell_fw, cell_bw, self.proj_encoder_inputs, dtype=tf.float32)
-            if FLAGS.cell_type == "LSTM":
-                o_fw_c, o_fw_m  = tf.unstack(output_state_fw, axis=0)
-                o_bw_c, o_bw_m  = tf.unstack(output_state_bw, axis=0)
-                o_c =  tf.concat([o_fw_c, o_bw_c], axis=1)
-                o_m =  tf.concat([o_fw_m, o_bw_m], axis=1)  
-                final_state = tf.contrib.rnn.LSTMStateTuple(o_c, o_m)
-            else:
+	    print("One layer RNN.")
+	    encoder_outputs, output_state_fw, output_state_bw = tf.contrib.rnn.static_bidirectional_rnn(
+								multicell_fw, multicell_bw, self.proj_encoder_inputs, dtype=tf.float32)
+	    outpus_state_fw = tf.gather(encoder_outputs, len(encoder_outputs) - 1)
+	    if FLAGS.cell_type == "LSTM":
+	        o_fw_c, o_fw_m  = tf.unstack(output_state_fw, axis=0)
+	        o_bw_c, o_bw_m  = tf.unstack(output_state_bw, axis=0)
+	        o_c =  tf.concat([o_fw_c, o_bw_c], axis=1)
+	        o_m =  tf.concat([o_fw_m, o_bw_m], axis=1)  
+	        final_state = tf.contrib.rnn.LSTMStateTuple(o_c, o_m)
+	    else:
                 final_state = tf.concat([output_state_fw, output_state_bw], axis=1)
 
         output_size = size if not bidirect else 2*size
+	print("Output Size: {0} given size: {1}.".format(output_size, size))
         # Need a dummy output to point on it. End of decoding.
-        encoder_outputs = [tf.zeros([FLAGS.batch_size, output_size])] + encoder_outputs 
+        encoder_outputs = [tf.zeros([FLAGS.batch_size, output_size])] + encoder_outputs #[tf.zeros([FLAGS.batch_size, output_size])] + encoder_outputs 
         # First calculate a concatenation of encoder outputs to put attention on.
         top_states = [tf.reshape(e, [-1, 1, output_size])
-                      for e in encoder_outputs]
+			      for e in encoder_outputs]
         attention_states = tf.concat(axis=1, values=top_states)
 
         with tf.variable_scope("decoder"):
@@ -342,7 +355,7 @@ if __name__ == "__main__":
     np.random.seed(RAND_SEED)
     with tf.device('/gpu:0'):
         pointer_network = PointerNetwork(FLAGS.max_steps, FLAGS.input_dim, FLAGS.rnn_size,
-                                         1, 5, FLAGS.batch_size, FLAGS.learning_rate, \
+                                         FLAGS.num_layers, 5, FLAGS.batch_size, FLAGS.learning_rate, \
                                         FLAGS.lr_decay, FLAGS.inter_dim, \
                                         FLAGS.fc_dim, FLAGS.use_cnn, FLAGS.image_dim, FLAGS.vgg_dim, FLAGS.bidirect)
         dataset = DataGenerator(FLAGS.puzzle_width, FLAGS.puzzle_width, FLAGS.input_dim, FLAGS.use_cnn, FLAGS.image_dim)
