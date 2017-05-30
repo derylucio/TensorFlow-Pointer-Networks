@@ -40,7 +40,7 @@ from tensorflow.contrib.rnn.python.ops import core_rnn_cell_impl
 
 
 def pointer_decoder(decoder_inputs, initial_state, attention_states, cell,
-                    feed_prev=False, one_hot=False,  dtype=dtypes.float32, scope=None, cell_type="LSTM"):
+                    feed_prev=False, one_hot=False,  dtype=dtypes.float32, scope=None, cell_type="LSTM", num_glimpses=0):
     """RNN decoder with pointer net for the sequence-to-sequence model.
     Args:
       decoder_inputs: a list of 2D Tensors [batch_size x cell.input_size].
@@ -134,7 +134,14 @@ def pointer_decoder(decoder_inputs, initial_state, attention_states, cell,
             states.append(new_state)
             # Run the attention mechanism.
             output = attention(new_state)
-
+            if num_glimpses > 0:
+                for i in range(num_glimpses):
+                    vs.get_variable_scope().reuse_variables()
+                    print(new_state.get_shape())
+                    new_inp =  tf.reduce_sum(attn_inps * tf.reshape(tf.nn.softmax(output), [-1, attn_length, 1]), 1)
+                    _, new_state = cell(new_inp, states[-1])
+                    print(cell_output.get_shape(), x.get_shape())
+                    output = attention(new_state)
             outputs.append(output)
 
     return outputs, states, inps

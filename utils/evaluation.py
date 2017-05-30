@@ -28,15 +28,19 @@ def NeighborAccuracy(originalPerm, proposedPerm, dims):
 		next_ind = index + 1
 		prop_index = np.where(proposedPerm == piece_num)[0]
 		if(next_ind % numCols != 0):
-			if len(prop_index) > 1 : continue
-			prop_right = prop_index + 1 
+			if len(prop_index) > 1 :
+				prop_right =  prop_index[0] + 1
+			else:
+				prop_right = prop_index + 1 
 			num_correct += 1 if (prop_right % numCols != 0) and  proposedPerm[prop_right] == originalPerm[next_ind]  else 0
 			total_neighbors += 1
 
 		next_ind = index + numCols
 		if(next_ind < len(originalPerm)):
-			if len(prop_index) > 1 : continue
-			prop_down = prop_index + numCols
+			if len(prop_index) > 1 :
+				prop_down = prop_index[0] + numCols 
+			else:
+				prop_down = prop_index + numCols
 			num_correct += 1 if (prop_down < len(originalPerm)) and proposedPerm[prop_down] == originalPerm[next_ind] else 0
 			total_neighbors += 1
 	return num_correct/total_neighbors

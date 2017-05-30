@@ -30,7 +30,7 @@ flags.DEFINE_integer('rnn_size', 400, 'RNN size.  ') # HYPER-PARAMS
 flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
 flags.DEFINE_integer('puzzle_height', 3, 'Puzzle Height')
 flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
-flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate') # Hyper param
+flags.DEFINE_float('learning_rate', 2e-4, 'Learning rate') # Hyper param
 flags.DEFINE_integer('inter_dim', 4096, 'Dimension of intermediate state - if using fully connected' ) # HYPER-PARAMS
 flags.DEFINE_integer('fc_dim', 256, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
 flags.DEFINE_integer('input_dim', 12288, 'Dimensionality of input images - use if flattened') 
@@ -39,15 +39,15 @@ flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPE
 flags.DEFINE_integer('nb_epochs', 10000, 'the number of epochs to run')
 flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HYPER-PARAMS
 flags.DEFINE_integer('lr_decay_period', 100, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
-flags.DEFINE_float('reg', 5e-3, 'regularization on model parameters') # HYPER-PARAMS
+flags.DEFINE_float('reg', 0.0, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
 flags.DEFINE_bool('bidirect', True, "Whether to use a bidirectional rnn for encoder")
-flags.DEFINE_string('cell_type', 'LSTM', 'The type of RNN cell to use for the pointer network') # HYPER-PARAMS
-flags.DEFINE_bool('encoder_attn_1hot', False, 'Whether to use linear combination of attention, or argmax of attention to choose input')
-
-
+flags.DEFINE_string('cell_type', 'GRU', 'The type of RNN cell to use for the pointer network') # HYPER-PARAMS
+flags.DEFINE_bool('encoder_attn_1hot', True, 'Whether to use linear combination of attention, or argmax of attention to choose input') # HYPER-PARAMS
+flags.DEFINE_float('dp', 0.6, "The rate to apply dropout. Put a negative value if you want to use l2regularization instead") #HYPER-PARAMS
+flags.DEFINE_integer('num_glimpses', 1, "The number of times to perform glimpses before final attention") # HYPTER-PARAMS
 
 class PointerNetwork(object):
     def __init__(self, max_len, input_size, size, num_layers, max_gradient_norm, batch_size, learning_rate,
@@ -72,7 +72,7 @@ class PointerNetwork(object):
         self.learning_rate_decay_op = self.learning_rate.assign(
             self.learning_rate * learning_rate_decay_factor)
         self.global_step = tf.Variable(0, trainable=False)
-
+        self.keep_prob = tf.placeholder(tf.float32, name="dropout_pbty")
         if not bidirect:
             cell = self.getCell(size)
             decoder_cell = self.getCell(size) 
@@ -168,11 +168,11 @@ class PointerNetwork(object):
 
         with tf.variable_scope("decoder"):
             outputs, states, _ = pointer_decoder(
-                self.proj_decoder_inputs, final_state, attention_states, decoder_cell, cell_type=FLAGS.cell_type)
+                self.proj_decoder_inputs, final_state, attention_states, decoder_cell, cell_type=FLAGS.cell_type, num_glimpses=FLAGS.num_glimpses)
         #print("DECODING")
         with tf.variable_scope("decoder", reuse=True):
             predictions, _, inps = pointer_decoder(
-                self.proj_decoder_inputs, final_state, attention_states, decoder_cell, feed_prev=True, one_hot=FLAGS.encoder_attn_1hot,  cell_type=FLAGS.cell_type)
+                self.proj_decoder_inputs, final_state, attention_states, decoder_cell, feed_prev=True, one_hot=FLAGS.encoder_attn_1hot,  cell_type=FLAGS.cell_type, num_glimpses=FLAGS.num_glimpses)
 
         self.predictions = predictions
 
@@ -182,11 +182,14 @@ class PointerNetwork(object):
 
     def getCell(self, size):
         if FLAGS.cell_type == "LSTM":
-           return tf.contrib.rnn.LSTMCell(size)
+           cell = tf.contrib.rnn.LSTMCell(size)
         else:
-           return tf.contrib.rnn.GRUCell(size)
+           cell = tf.contrib.rnn.GRUCell(size)
+        if FLAGS.dp < 0.0:
+           return cell
+        return tf.contrib.rnn.DropoutWrapper(cell,  variational_recurrent=True, input_size=tf.TensorShape(( FLAGS.fc_dim)),input_keep_prob=self.keep_prob, output_keep_prob=self.keep_prob, dtype=tf.float32)
            
-    def create_feed_dict(self, encoder_input_data, decoder_input_data, decoder_target_data):
+    def create_feed_dict(self, encoder_input_data, decoder_input_data, decoder_target_data, keep_prob):
         feed_dict = {}
         for placeholder, data in zip(self.encoder_inputs, encoder_input_data):
             feed_dict[placeholder] = data
@@ -200,6 +203,7 @@ class PointerNetwork(object):
         for placeholder in self.target_weights:
             feed_dict[placeholder] = np.ones([self.batch_size, 1])
 
+        feed_dict[self.keep_prob] = keep_prob
         return feed_dict
 
 
@@ -232,7 +236,7 @@ class PointerNetwork(object):
                     var_list.append(tf_var)
                     reg_loss += tf.nn.l2_loss(tf_var)
         
-        loss += reg * reg_loss
+        loss += reg * reg_loss if FLAGS.dp < 0.0 else 0.0
         tf.summary.scalar('train_loss', loss) # Sanya
 
         test_loss = 0.0
@@ -278,20 +282,20 @@ class PointerNetwork(object):
 
                 # Train
                 feed_dict = self.create_feed_dict(
-                    encoder_input_data, decoder_input_data, targets_data)
-                d_x, l, summary = sess.run([loss, train_op, merged], feed_dict=feed_dict)
+                    encoder_input_data, decoder_input_data, targets_data, FLAGS.dp)
+                d_x, d_reg, l, summary = sess.run([loss, reg_loss, train_op, merged], feed_dict=feed_dict)
                 train_loss_value = d_x #0.9 * train_loss_value + 0.1 * d_x
                 train_writer.add_summary(summary, i)
 
                 if i % 1 == 0:
                     print('Step: %d' % i)
-                    print("Train: ", train_loss_value)
+                    print("Train: ", train_loss_value - reg *d_reg, " reg:",  reg *d_reg)
 
                 encoder_input_data, decoder_input_data, targets_data = dataset.next_batch(
                     FLAGS.batch_size, FLAGS.max_steps, train_mode=False)
                 # Test
                 feed_dict = self.create_feed_dict(
-                    encoder_input_data, decoder_input_data, targets_data)
+                    encoder_input_data, decoder_input_data, targets_data, 1.0)
                 # inps_ = sess.run(self.inps, feed_dict=feed_dict)
 
                 predictions = sess.run(self.predictions, feed_dict=feed_dict)
@@ -311,11 +315,14 @@ class PointerNetwork(object):
                     saver.save(sess, ckpt_file)
                     total_neighbor_acc = 0.0
                     total_direct_acc = 0.0
+                    num_iss = 0.0
                     for correct, pred in zip(input_order, predictions_order):
                         correct, pred = np.array(correct), np.array(pred)
+                        num_iss += 1.0 if len(np.unique(pred) != FLAGS.max_steps) else 0
+                        print("Number of unique things ", np.unique(pred))
                         total_neighbor_acc += NeighborAccuracy(correct, pred, (FLAGS.puzzle_height, FLAGS.puzzle_width))
                         total_direct_acc  += directAccuracy(correct, pred)
-                    print("Avg neighbor acc = ", total_neighbor_acc/len(input_order), "Avg direct Accuracy = ", total_direct_acc/len(input_order))
+                    print("Avg neighbor acc = ", total_neighbor_acc/len(input_order), "Avg direct Accuracy = ", total_direct_acc/len(input_order),"fraction :", num_iss/len(input_order))
                     epoch_data.append([train_loss_value, test_loss_value,total_neighbor_acc/len(input_order), total_direct_acc/len(input_order)])
                     np.save(CKPT_DIR + "/" + model_str + '/epoch_data_' + model_str, epoch_data)
                     # print(encoder_input_data, decoder_input_data, targets_data)
@@ -323,7 +330,9 @@ class PointerNetwork(object):
 
 def getModelStr():
     model_str = "CNN_" if FLAGS.use_cnn else "MLP_"
-    model_str += "rnn_size-" + str(FLAGS.rnn_size) + "_learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) + "_reg-" + str(FLAGS.reg) + "_optimizer-" + FLAGS.optimizer + "_bidirect-" +  str(FLAGS.bidirect) + "_cell-type-" + FLAGS.cell_type
+    model_str += "rnn_size-" + str(FLAGS.rnn_size) + "_learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) + "_num-glimpses-" + str(FLAGS.num_glimpses)
+    model_str += "_reg-" + str(FLAGS.reg) if FLAGS.dp < 0.0 else "_dp-" + str(FLAGS.dp)
+    model_str += "_optimizer-" + FLAGS.optimizer + "_bidirect-" +  str(FLAGS.bidirect) + "_cell-type-" + FLAGS.cell_type
     if FLAGS.tune_vgg: model_str += '_tuneVGG'
     if FLAGS.encoder_attn_1hot: model_str += '_used-attn-one-hot'
     return model_str
