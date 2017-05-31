@@ -47,7 +47,7 @@ flags.DEFINE_bool('bidirect', True, "Whether to use a bidirectional rnn for enco
 flags.DEFINE_string('cell_type', 'GRU', 'The type of RNN cell to use for the pointer network') # HYPER-PARAMS
 flags.DEFINE_bool('encoder_attn_1hot', True, 'Whether to use linear combination of attention, or argmax of attention to choose input') # HYPER-PARAMS
 flags.DEFINE_float('dp', 0.7, "The rate to apply dropout. Put a negative value if you want to use l2regularization instead") #HYPER-PARAMS
-flags.DEFINE_integer('num_glimpses', 0, "The number of times to perform glimpses before final attention") # HYPTER-PARAMS
+flags.DEFINE_integer('num_glimpses', 1, "The number of times to perform glimpses before final attention") # HYPTER-PARAMS
 flags.DEFINE_integer('num_layers', 3, 'Number of layers for the RNN') # SANYA testing
 
 class PointerNetwork(object):
@@ -278,6 +278,7 @@ class PointerNetwork(object):
         ckpt_file = CKPT_DIR + "/" + model_str + "/" + model_str
         saver = tf.train.Saver()
         config = tf.ConfigProto(allow_soft_placement=True)
+        test_losses = []
         with tf.Session(config=config) as sess:
             merged = tf.summary.merge_all()
             train_writer = tf.summary.FileWriter("/tmp/" + model_str + "/train", sess.graph)
@@ -318,7 +319,7 @@ class PointerNetwork(object):
 
                 test_loss_value, summary = sess.run([test_loss, merged], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)
                 test_writer.add_summary(summary, i)
-
+                test_losses.append(test_loss_value)
                 if i % 1 == 0:
                     print("Test: ", test_loss_value)
 
@@ -327,8 +328,9 @@ class PointerNetwork(object):
 
                 input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
                 input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
-                if i > 0 and  i % 50 == 0 :
+                if i > 0 and min(test_losses) > test_loss_value: 
                     saver.save(sess, ckpt_file)
+                if i > 0 and  i % 50 == 0 :
                     total_neighbor_acc = 0.0
                     total_direct_acc = 0.0
                     num_iss = 0.0
