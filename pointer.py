@@ -40,7 +40,7 @@ from tensorflow.contrib.rnn.python.ops import core_rnn_cell_impl
 
 
 def pointer_decoder(decoder_inputs, initial_state, attention_states, cell,
-                    feed_prev=False, one_hot=False,  dtype=dtypes.float32, scope=None, cell_type="LSTM", num_glimpses=0):
+                    feed_prev=False, one_hot=False,  dtype=dtypes.float32, scope=None, cell_type="LSTM", num_glimpses=0, num_layers=1):
     """RNN decoder with pointer net for the sequence-to-sequence model.
     Args:
       decoder_inputs: a list of 2D Tensors [batch_size x cell.input_size].
@@ -129,20 +129,20 @@ def pointer_decoder(decoder_inputs, initial_state, attention_states, cell,
 
             # Merge input and previous attentions into one vector of the right size.
             x = inp   # might want to do this if we have previous attention core_rnn_cell_impl._linear([inp, attns], cell.output_size, True)
-            # Run the RNN.
+            # Run the RNN
             cell_output, new_state = cell(x, states[-1])
+            #if num_layers > 1: new_state = new_state[-1]
             states.append(new_state)
             # Run the attention mechanism.
+            if num_layers > 1: new_state = new_state[-1]
             output = attention(new_state)
             if num_glimpses > 0:
                 for i in range(num_glimpses):
                     vs.get_variable_scope().reuse_variables()
-                    #print(new_state.get_shape())
-                    new_inp =  tf.reduce_sum(attention_states * tf.reshape(tf.nn.softmax(output), [-1, attn_length, 1]), 1)
-                    #_, new_state = cell(new_inp, states[-1])
-                    #print(new_inp.get_shape())
-                    #print(cell_output.get_shape(), x.get_shape())
-                    output = attention(new_inp)
+                    new_inp =  tf.reduce_sum(attn_inps * tf.reshape(tf.nn.softmax(output), [-1, attn_length, 1]), 1)
+                    _, new_state = cell(new_inp, states[-2])
+                    if num_layers > 1: new_state = new_state[-1]
+                    output = attention(new_state)
             outputs.append(output)
 
     return outputs, states, inps
