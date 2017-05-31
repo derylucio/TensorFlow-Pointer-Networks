@@ -337,7 +337,7 @@ class PointerNetwork(object):
                     for correct, pred in zip(input_order, predictions_order):
                         correct, pred = np.array(correct), np.array(pred)
                         num_iss += 1.0 if len(np.unique(pred) != FLAGS.max_steps) else 0
-                        print("Number of unique things ", np.unique(pred))
+                        print("Number of unique things ", np.unique(pred), pred) 
                         total_neighbor_acc += NeighborAccuracy(correct, pred, (FLAGS.puzzle_height, FLAGS.puzzle_width))
                         total_direct_acc  += directAccuracy(correct, pred)
                     print("Avg neighbor acc = ", total_neighbor_acc/len(input_order), "Avg direct Accuracy = ", total_direct_acc/len(input_order),"fraction :", num_iss/len(input_order))

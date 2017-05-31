@@ -5,11 +5,11 @@ partition = "40"
 with open('runbatch', 'r') as myfile:
     template = myfile.read()
 
-load_from_ckpts = "False" # "False"
+load_from_ckpts = "True" # "False"
 cell_type = "GRU"
 one_hot = "True"
 lrs = [2e-4] #np.random.uniform(5e-4, 5e-6, 3)
-rnns  = [100, 300, 500]#400]#[100, 300, 400] 
+rnns  = [100]#, 300, 500]#400]#[100, 300, 400] 
 fc_dims = [256, 512]#256]
 regs = [0.0]#, 1e-2, 1e-3]
 fnumber = 0
