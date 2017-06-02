@@ -336,7 +336,7 @@ class PointerNetwork(object):
 
                 input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
                 input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
-                if i > 0 and min(test_losses) > test_loss_value: 
+                if i > 0 and min(test_losses) >= test_loss_value: 
                     saver.save(sess, ckpt_file)
                 if i > 0 and  i % 50 == 0 :
                     total_neighbor_acc = 0.0
