@@ -5,13 +5,13 @@ partition = "40"
 with open('runbatch', 'r') as myfile:
     template = myfile.read()
 
-load_from_ckpts = "True" # "False"
-cell_type = "GRU"
+load_from_ckpts = "False" # "False"
+cell_type = "LSTM"
 one_hot = "True"
-lrs = [2e-4] #np.random.uniform(5e-4, 5e-6, 3)
-rnns  = [100]#, 300, 500]#400]#[100, 300, 400] 
-fc_dims = [256, 512]#256]
-regs = [0.0]#, 1e-2, 1e-3]
+lrs = [1e-4] #np.random.uniform(5e-4, 5e-6, 3)
+rnns  = [400]#, 300, 500]#400]#[100, 300, 400] 
+fc_dims = [256]#256]
+regs = [0.01]#, 1e-2, 1e-3]
 fnumber = 0
 dps = [-1]#0.7]
 for lr in lrs:

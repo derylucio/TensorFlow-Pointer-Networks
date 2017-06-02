@@ -34,8 +34,10 @@ class DataGenerator(object):
         size = [batch_size, self.input_dim] if not self.use_cnn else [batch_size, self.image_dim, self.image_dim, 3]
         for _ in range(N):
             reader_input_batch.append(np.zeros(size))
-        for _ in range(N + 1):
             decoder_input_batch.append(np.zeros(size))
+
+        for _ in range(N + 1):
+            #decoder_input_batch.append(np.zeros(size))
             writer_outputs_batch.append(np.zeros([batch_size, N + 1]))
 
         mode_string = 'train' if train_mode else 'val'
@@ -54,9 +56,9 @@ class DataGenerator(object):
                 reader_input_batch[i][b] = x[b][i]
                 if train_mode:
                     index = np.where(y[b] == i)[0][0]
-                    decoder_input_batch[i + 1][b] = x[b][index]
+                    decoder_input_batch[i][b] = x[b][index]
                 else:
-                    decoder_input_batch[i + 1][b] = x[b][i]
+                    decoder_input_batch[i][b] = x[b][i]
                 writer_outputs_batch[i][b, y[b][i] + 1] = 1.0
 
             # Points to the stop symbol

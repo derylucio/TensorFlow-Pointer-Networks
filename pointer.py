@@ -81,9 +81,9 @@ def pointer_decoder(decoder_inputs, initial_state, attention_states, cell,
             attention_states, [-1, attn_length, 1, attn_size])
 
         attention_vec_size = attn_size  # Size of query vectors for attention.
-        k = vs.get_variable("AttnW", [1, 1, attn_size, attention_vec_size])
-        hidden_features = nn_ops.conv2d(hidden, k, [1, 1, 1, 1], "SAME")
-        v = vs.get_variable("AttnV", [attention_vec_size])
+        k = vs.get_variable("AttnW", [1, 1, attn_size, attention_vec_size], initializer=tf.contrib.layers.variance_scaling_initializer())
+        hidden_features = nn_ops.conv2d(hidden, k, [1, 1, 1, 1], "SAME")#, kernel_initializer=tf.contrib.layers.variance_scaling_initializer())
+        v = vs.get_variable("AttnV", [attention_vec_size], initializer=tf.contrib.layers.variance_scaling_initializer())
 
         states = [initial_state]
 
@@ -128,7 +128,7 @@ def pointer_decoder(decoder_inputs, initial_state, attention_states, cell,
             # Use the same inputs in inference, order internaly
 
             # Merge input and previous attentions into one vector of the right size.
-            x = inp   # might want to do this if we have previous attention core_rnn_cell_impl._linear([inp, attns], cell.output_size, True)
+            x = core_rnn_cell_impl._linear([inp, attns], cell.output_size, True) #inp   # might want to do this if we have previous attention core_rnn_cell_impl._linear([inp, attns], cell.output_size, True)
             # Run the RNN
             cell_output, new_state = cell(x, states[-1])
             #if num_layers > 1: new_state = new_state[-1]

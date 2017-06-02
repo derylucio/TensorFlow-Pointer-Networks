@@ -30,7 +30,7 @@ flags.DEFINE_integer('rnn_size', 400, 'RNN size.  ') # HYPER-PARAMS
 flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
 flags.DEFINE_integer('puzzle_height', 3, 'Puzzle Height')
 flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
-flags.DEFINE_float('learning_rate', 2e-4, 'Learning rate') # Hyper param
+flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate') # Hyper param
 flags.DEFINE_integer('inter_dim', 4096, 'Dimension of intermediate state - if using fully connected' ) # HYPER-PARAMS
 flags.DEFINE_integer('fc_dim', 256, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
 flags.DEFINE_integer('input_dim', 12288, 'Dimensionality of input images - use if flattened') 
@@ -39,16 +39,16 @@ flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPE
 flags.DEFINE_integer('nb_epochs', 10000, 'the number of epochs to run')
 flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HYPER-PARAMS
 flags.DEFINE_integer('lr_decay_period', 100, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
-flags.DEFINE_float('reg', 0.0, 'regularization on model parameters') # HYPER-PARAMS
+flags.DEFINE_float('reg', 0.001, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
 flags.DEFINE_bool('bidirect', True, "Whether to use a bidirectional rnn for encoder")
 flags.DEFINE_string('cell_type', 'GRU', 'The type of RNN cell to use for the pointer network') # HYPER-PARAMS
 flags.DEFINE_bool('encoder_attn_1hot', True, 'Whether to use linear combination of attention, or argmax of attention to choose input') # HYPER-PARAMS
-flags.DEFINE_float('dp', 0.7, "The rate to apply dropout. Put a negative value if you want to use l2regularization instead") #HYPER-PARAMS
-flags.DEFINE_integer('num_glimpses', 1, "The number of times to perform glimpses before final attention") # HYPTER-PARAMS
-flags.DEFINE_integer('num_layers', 3, 'Number of layers for the RNN') # SANYA testing
+flags.DEFINE_float('dp', -1, "The rate to apply dropout. Put a negative value if you want to use l2regularization instead") #HYPER-PARAMS
+flags.DEFINE_integer('num_glimpses', 0, "The number of times to perform glimpses before final attention") # HYPTER-PARAMS
+flags.DEFINE_integer('num_layers', 2, 'Number of layers for the RNN') # SANYA testing
 
 class PointerNetwork(object):
     def __init__(self, max_len, input_size, size, num_layers, max_gradient_norm, batch_size, learning_rate,
@@ -67,7 +67,7 @@ class PointerNetwork(object):
             learning_rate: learning rate to start with.
             learning_rate_decay_factor: decay learning rate by this much when needed.
         """
-        self.init =  tf.contrib.layers.variance_scaling_initializer()
+        self.init = tf.contrib.layers.variance_scaling_initializer()
         self.batch_size = batch_size
         self.learning_rate = tf.Variable(float(learning_rate), trainable=False)
         self.learning_rate_decay_op = self.learning_rate.assign(
@@ -103,7 +103,7 @@ class PointerNetwork(object):
 
         for i in range(max_len + 1):
             i_size = [batch_size, input_size] if not use_cnn else [batch_size, image_dim, image_dim, 3]
-            self.decoder_inputs.append(tf.placeholder(
+            if i > 0 : self.decoder_inputs.append(tf.placeholder(
                 tf.float32, i_size, name="DecoderInput%d" % i))
             self.decoder_targets.append(tf.placeholder(
                 tf.float32, [batch_size, max_len + 1], name="DecoderTarget%d" % i))  # one hot
@@ -111,6 +111,8 @@ class PointerNetwork(object):
                 tf.float32, [batch_size, 1], name="TargetWeight%d" % i))
 
         # Encoder
+        trainable_init_state = tf.Variable(tf.zeros(i_size), "trainable_init_state")
+        self.decoder_inputs_updated  = [trainable_init_state] + self.decoder_inputs
         # Neeed to pass both encode inputs and everything through a dense layer.
         if use_cnn:
             # Encoder 
@@ -118,13 +120,14 @@ class PointerNetwork(object):
             all_inps = []
             num_encoder = len(self.encoder_inputs)
             all_inps.extend(self.encoder_inputs)
-            all_inps.extend(self.decoder_inputs)
+            all_inps.extend(self.decoder_inputs_updated)
             stacked_ins = tf.stack(all_inps)
             stacked_ins = tf.reshape(stacked_ins, [-1, image_dim, image_dim, 3])
             inputfn, features = cnn_f_extractor.getCNNFEatures(stacked_ins, vgg_dim, fc_dim, self.init)
+            self.print_out = features[0]
             self.inputfn = inputfn
             features = tf.reshape(features, [-1, batch_size, fc_dim])
-            all_out = tf.unstack(features)
+            all_out = tf.unstack(features) 
             self.proj_encoder_inputs = all_out[:num_encoder]
             self.proj_decoder_inputs = all_out[num_encoder:]
         else:
@@ -162,16 +165,20 @@ class PointerNetwork(object):
                     bw = output_state_bw[ind]
                     final_state.append(tf.concat([fw, bw], axis=1))
                  #output_state_fw, output_state_bw = output_state_fw[-1], output_state_bw[-1]
-            if num_layers < 1 and FLAGS.cell_type == "LSTM": # DOESN'T WORK FOR NUM_LAYERS > 1
-                o_fw_c, o_fw_m  = tf.unstack(output_state_fw, axis=0)
-                o_bw_c, o_bw_m  = tf.unstack(output_state_bw, axis=0)
-                o_c =  tf.concat([o_fw_c, o_bw_c], axis=1)
-                o_m =  tf.concat([o_fw_m, o_bw_m], axis=1)  
-                final_state = tf.contrib.rnn.LSTMStateTuple(o_c, o_m)
+            if FLAGS.cell_type == "LSTM": # DOESN'T WORK FOR NUM_LAYERS > 1
+                if num_layers == 1: output_state_fw, output_state_bw = [output_state_fw], [output_state_bw]
+                final_state = []
+                for ind, fw in enumerate(output_state_fw):
+                    bw = output_state_bw[ind]
+                    o_fw_c, o_fw_m  = tf.unstack(fw, axis=0)
+                    o_bw_c, o_bw_m  = tf.unstack(bw, axis=0)
+                    o_c =  tf.concat([o_fw_c, o_bw_c], axis=1)
+                    o_m =  tf.concat([o_fw_m, o_bw_m], axis=1)  
+                    final_state.append(tf.contrib.rnn.LSTMStateTuple(o_c, o_m))
+                if num_layers == 1: final_state = final_state[0]
             elif num_layers <= 1:
                 final_state = tf.concat([output_state_fw, output_state_bw], axis=1)
         
-        print(final_state)
         output_size = size if not bidirect else 2*size
         #output_size = output_size*num_layers
         # Need a dummy output to point on it. End of decoding.
@@ -198,9 +205,9 @@ class PointerNetwork(object):
 
     def getCell(self, size):
         if FLAGS.cell_type == "LSTM":
-           cell = tf.contrib.rnn.LSTMCell(size)
+           cell = tf.contrib.rnn.LSTMCell(size, initializer=tf.random_uniform_initializer(-0.08, 0.08)) #based on paper recommendations
         else:
-           cell = tf.contrib.rnn.GRUCell(size)
+           cell = tf.contrib.rnn.GRUCell(size)#, initializer=tf.contrib.layers.variance_scaling_initializer())
         if FLAGS.dp < 0.0:
            return cell
         return tf.contrib.rnn.DropoutWrapper(cell,  variational_recurrent=True, input_size=tf.TensorShape(( FLAGS.fc_dim)),input_keep_prob=self.keep_prob, output_keep_prob=self.keep_prob, dtype=tf.float32)
@@ -317,7 +324,8 @@ class PointerNetwork(object):
 
                 predictions = sess.run(self.predictions, feed_dict=feed_dict)
 
-                test_loss_value, summary = sess.run([test_loss, merged], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)
+                test_loss_value, summary, p = sess.run([test_loss, merged, self.print_out], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
+                #print(p)
                 test_writer.add_summary(summary, i)
                 test_losses.append(test_loss_value)
                 if i % 1 == 0:
