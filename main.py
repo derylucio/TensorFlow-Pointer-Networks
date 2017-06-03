@@ -39,7 +39,7 @@ flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPE
 flags.DEFINE_integer('nb_epochs', 10000, 'the number of epochs to run')
 flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HYPER-PARAMS
 flags.DEFINE_integer('lr_decay_period', 100, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
-flags.DEFINE_float('reg', 0.008, 'regularization on model parameters') # HYPER-PARAMS
+flags.DEFINE_float('reg', 0.001, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
@@ -335,7 +335,8 @@ class PointerNetwork(object):
 
                 input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
                 input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
-                if i > 0 and min(test_losses) >= test_loss_value: 
+                if i > 0 and min(test_losses) >= test_loss_value:
+                    print("We are saving the chekpoints") 
                     saver.save(sess, ckpt_file)
                 if i > 0 and  i % 50 == 0 :
                     total_neighbor_acc = 0.0

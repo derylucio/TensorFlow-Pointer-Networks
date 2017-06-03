@@ -16,7 +16,6 @@
 import tensorflow as tf
 import os
 import vgg
-import vgg_full
 import tensorflow.contrib.slim as slim
 from tensorflow.python.ops import variable_scope as vs
 #import tensorflow.contrib.slim.nets
