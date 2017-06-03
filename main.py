@@ -25,10 +25,10 @@ CKPT_DIR = "model_ckpts"
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 flags.DEFINE_integer('batch_size', 64, 'Batch size')
-flags.DEFINE_integer('max_steps', 9, 'Maximum number of pieces in puzzle')
+flags.DEFINE_integer('max_steps', 4, 'Maximum number of pieces in puzzle')
 flags.DEFINE_integer('rnn_size', 400, 'RNN size.  ') # HYPER-PARAMS
-flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
-flags.DEFINE_integer('puzzle_height', 3, 'Puzzle Height')
+flags.DEFINE_integer('puzzle_width', 2, 'Puzzle Width')
+flags.DEFINE_integer('puzzle_height', 2, 'Puzzle Height')
 flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
 flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate') # Hyper param
 flags.DEFINE_integer('inter_dim', 4096, 'Dimension of intermediate state - if using fully connected' ) # HYPER-PARAMS
