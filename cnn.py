@@ -26,7 +26,7 @@ class  CNN_FeatureExtractor(object):
 		self.checkpoints_dir = "ckpts"
 		self.ckpt_name = 'vgg_16.ckpt' 
 
-	def getCNNFEatures(self, input_tensor, fc_dim, out_dim, fc_initializer, use_full=False):
+	def getCNNFEatures(self, input_tensor, fc_dim, out_dim, fc_initializer, use_full=False, keep_prob=0.5):
 		graph = tf.Graph()
 
 		with graph.as_default():
@@ -47,10 +47,12 @@ class  CNN_FeatureExtractor(object):
 		print("pool shape", pool_result.get_shape(), " usefull", use_full)
 		flattened = tf.reshape(pool_result, [-1, fc_dim])
 		print("flattened ", flattened.get_shape())
+		if not use_full: flattened = tf.nn.dropout(flattened, keep_prob)
 		with vs.variable_scope('fc_vgg'):
 	        	W = vs.get_variable("W", [fc_dim, out_dim], initializer=fc_initializer)
 	        	b = vs.get_variable("b", [out_dim], initializer=fc_initializer)
 	        	output = tf.nn.relu(tf.matmul(flattened, W) + b)
+		if use_full: output = tf.nn.dropout(output, keep_prob)
 		return init_fn, output
 
     

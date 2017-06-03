@@ -40,7 +40,7 @@ flags.DEFINE_float('reg', 0.001, 'regularization on model parameters') # HYPER-P
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
 flags.DEFINE_bool("use_jigsaws", False, "whether to use jigsaws for training")
-flags.DEFINE_string("model_path", "model_ckpts/CNN_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.001_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_used-attn-one-hot/CNN_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.001_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_used-attn-one-hot", "the path to the checkpointed model") #HYPER-PARAMS
+flags.DEFINE_string("model_path", "model_ckpts/CNN_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.001_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_used-attn-one-hot/specials", "the path to the checkpointed model") #HYPER-PARAMS
 
 
 class ClassifierNetwork(object):
@@ -78,7 +78,7 @@ class ClassifierNetwork(object):
         stacked_ins = tf.reshape(self.inputs, [-1, image_dim, image_dim, 3])
         print("SHAPERS ", stacked_ins.get_shape())
         if not use_jigsaws: fc_dim = num_classes
-        inputfn, features = cnn_f_extractor.getCNNFEatures(stacked_ins, vgg_dim, fc_dim, self.init, use_full=(not use_jigsaws))
+        inputfn, features = cnn_f_extractor.getCNNFEatures(stacked_ins, vgg_dim, fc_dim, self.init, use_full=(not use_jigsaws), keep_prob=self.keep_prob)
         # non - jigsaw
         self.inputfn = inputfn
         if use_jigsaws:
@@ -136,7 +136,7 @@ class ClassifierNetwork(object):
                     var_list.append(tf_var)
                     reg_loss += tf.nn.l2_loss(tf_var)
         
-        loss += reg * reg_loss 
+        #loss += reg * reg_loss 
         tf.summary.scalar('train_loss', loss) # Sanya
 
         optimizer = self.getOptimizer(optim) #tf.train.AdamOptimizer()
@@ -184,7 +184,7 @@ class ClassifierNetwork(object):
 
                 # Train
                 print("inputs : ", np.shape(input_data), " targets : ", np.shape(targets_data))
-                feed_dict = self.create_feed_dict(input_data, targets_data, 1.0)
+                feed_dict = self.create_feed_dict(input_data, targets_data, 0.5)
                 d_x, d_reg, l, summary, train_pred = sess.run([loss, reg_loss, train_op, merged, self.outputs], feed_dict=feed_dict)
                 train_loss_value = d_x #0.9 * train_loss_value + 0.1 * d_x
                 train_writer.add_summary(summary, i)
