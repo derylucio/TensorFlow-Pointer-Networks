@@ -24,7 +24,7 @@ CKPT_DIR = "model_ckpts"
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_integer('batch_size', 64, 'Batch size')
+flags.DEFINE_integer('batch_size', 32, 'Batch size')
 flags.DEFINE_integer('max_steps', 1, 'Maximum number of pieces in puzzle')
 flags.DEFINE_integer('puzzle_width', 1, 'Puzzle Width')
 flags.DEFINE_integer('puzzle_height', 1, 'Puzzle Height')
@@ -36,12 +36,12 @@ flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPE
 flags.DEFINE_integer('nb_epochs', 10000, 'the number of epochs to run')
 flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HYPER-PARAMS
 flags.DEFINE_integer('lr_decay_period', 100, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
-flags.DEFINE_float('reg', 0.001, 'regularization on model parameters') # HYPER-PARAMS
+flags.DEFINE_float('reg', 0.005, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
 flags.DEFINE_bool("use_jigsaws", False, "whether to use jigsaws for training")
 flags.DEFINE_string("model_path", "model_ckpts/CNN_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.001_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_used-attn-one-hot/specials", "the path to the checkpointed model") #HYPER-PARAMS
-
+flags.DEFINE_integer("train_data", 1280, "amount of data to train on")
 
 class ClassifierNetwork(object):
     def __init__(self, max_len, batch_size, learning_rate, learning_rate_decay_factor, fc_dim, image_dim, vgg_dim, num_classes = 256, use_jigsaws=False):
@@ -136,7 +136,7 @@ class ClassifierNetwork(object):
                     var_list.append(tf_var)
                     reg_loss += tf.nn.l2_loss(tf_var)
         
-        #loss += reg * reg_loss 
+        loss += reg * reg_loss 
         tf.summary.scalar('train_loss', loss) # Sanya
 
         optimizer = self.getOptimizer(optim) #tf.train.AdamOptimizer()
@@ -209,11 +209,11 @@ class ClassifierNetwork(object):
                 test_acc = np.sum(test_pred == targets)*1.0/len(test_pred)
 
                 if i % 1 == 0:
-                    print("Test: ", test_loss_value, " test_acc : ", test_acc)
+                    print("Test: ", test_loss_value - reg *d_reg, " test_acc : ", test_acc)
                 
                 if i > 0 and min(test_losses) >= test_loss_value: 
                     saver.save(sess, ckpt_file)
-                if i > 0 and  i % 50 == 0 :
+                if i > 0 and  i % 20 == 0 :
                     epoch_data.append([train_loss_value, test_loss_value, train_acc, test_acc])
                     np.save(CKPT_DIR + "/" + model_str + '/epoch_data_' + model_str, epoch_data)
                     # print(encoder_input_data, decoder_input_data, targets_data)
@@ -223,7 +223,7 @@ def getModelStr():
     model_str = "Unsup-JIGSAW_" if FLAGS.use_jigsaws else "Unsup-INIT_"
     model_str += "learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) 
     model_str += "_reg-" + str(FLAGS.reg) 
-    model_str += "_optimizer-" + FLAGS.optimizer
+    model_str += "_optimizer-" + FLAGS.optimizer + "_train-data-" + str(FLAGS.train_data)
     if FLAGS.tune_vgg: model_str += '_tuneVGG'
     return model_str
 
