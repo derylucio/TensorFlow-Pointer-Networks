@@ -40,6 +40,8 @@ flags.DEFINE_float('reg', 0.001, 'regularization on model parameters') # HYPER-P
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
 flags.DEFINE_bool("use_jigsaws", False, "whether to use jigsaws for training")
+flags.DEFINE_string("model_path", "", "the path to the checkpointed model") #HYPER-PARAMS
+
 
 class ClassifierNetwork(object):
     def __init__(self, max_len, input_size, batch_size, learning_rate, learning_rate_decay_factor, fc_dim, image_dim, vgg_dim, num_clases = 256, use_jigsaws=False):
@@ -155,8 +157,6 @@ class ClassifierNetwork(object):
         train_loss_value = 0.0
         test_loss_value = 0.0
 
-        correct_order = 0
-        all_order = 0
         epoch_data = []
         ckpt_file = CKPT_DIR + "/" + model_str + "/" + model_str
         saver = tf.train.Saver()
@@ -169,7 +169,8 @@ class ClassifierNetwork(object):
 
             init = tf.global_variables_initializer()
             sess.run(init)
-            if use_cnn: self.inputfn(sess)
+            self.inputfn(sess)
+            self.jig_init(sess)
             if(load_frm_ckpts): 
                 print("Restoring Ckpts at : ", ckpt_file)
                 saver.restore(sess, ckpt_file)
@@ -177,54 +178,41 @@ class ClassifierNetwork(object):
                 if i > 0 and (i % lr_decay_period == 0):
                     sess.run([self.learning_rate_decay_op])
 
-                encoder_input_data, decoder_input_data, targets_data = dataset.next_batch(
+                input_data, _ , targets_data = dataset.next_batch(
                     FLAGS.batch_size, FLAGS.max_steps)
 
                 # Train
-                feed_dict = self.create_feed_dict(
-                    encoder_input_data, decoder_input_data, targets_data, FLAGS.dp)
-                d_x, d_reg, l, summary = sess.run([loss, reg_loss, train_op, merged], feed_dict=feed_dict)
+                feed_dict = self.create_feed_dict(input_data, targets_data, FLAGS.dp)
+                d_x, d_reg, l, summary, train_pred = sess.run([loss, reg_loss, train_op, merged, sel.outputs], feed_dict=feed_dict)
                 train_loss_value = d_x #0.9 * train_loss_value + 0.1 * d_x
                 train_writer.add_summary(summary, i)
 
+                train_pred = np.argmax(train_pred, axis=1)
+                targets = np.argmax(targets_data, axis=1)
+                train_acc = np.sum(train_pred == targets)*1.0/len(train_pred)
                 if i % 1 == 0:
                     print('Step: %d' % i)
-                    print("Train: ", train_loss_value - reg *d_reg, " reg:",  reg *d_reg)
+                    print("Train: ", train_loss_value - reg *d_reg, " reg:",  reg *d_reg, " acc : ", train_acc)
 
-                encoder_input_data, decoder_input_data, targets_data = dataset.next_batch(
+                input_data, _, targets_data = dataset.next_batch(
                     FLAGS.batch_size, FLAGS.max_steps, train_mode=False)
                 # Test
-                feed_dict = self.create_feed_dict(
-                    encoder_input_data, decoder_input_data, targets_data, 1.0)
-                # inps_ = sess.run(self.inps, feed_dict=feed_dict)
-
-                predictions = sess.run(self.predictions, feed_dict=feed_dict)
-
-                test_loss_value, summary = sess.run([test_loss, merged], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
+                feed_dict = self.create_feed_dict(input_data,  targets_data, 1.0)
+                test_loss_value, summary, test_pred  = sess.run([test_loss, merged, self.outputs], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
                 test_writer.add_summary(summary, i)
                 test_losses.append(test_loss_value)
+
+                train_pred = np.argmax(test_pred, axis=1)
+                targets = np.argmax(targets_data, axis=1)
+                test_acc = np.sum(test_pred == targets)*1.0/len(test_pred)
+
                 if i % 1 == 0:
-                    print("Test: ", test_loss_value)
-
-                predictions_order = np.concatenate([np.expand_dims(prediction, 0) for prediction in predictions])
-                predictions_order = np.argmax(predictions_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
-
-                input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
-                input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
+                    print("Test: ", test_loss_value, " test_acc : ", test_acc)
+                
                 if i > 0 and min(test_losses) >= test_loss_value: 
                     saver.save(sess, ckpt_file)
                 if i > 0 and  i % 50 == 0 :
-                    total_neighbor_acc = 0.0
-                    total_direct_acc = 0.0
-                    num_iss = 0.0
-                    for correct, pred in zip(input_order, predictions_order):
-                        correct, pred = np.array(correct), np.array(pred)
-                        num_iss += 1.0 if len(np.unique(pred) != FLAGS.max_steps) else 0
-                        print("Number of unique things ", np.unique(pred), pred) 
-                        total_neighbor_acc += NeighborAccuracy(correct, pred, (FLAGS.puzzle_height, FLAGS.puzzle_width))
-                        total_direct_acc  += directAccuracy(correct, pred)
-                    print("Avg neighbor acc = ", total_neighbor_acc/len(input_order), "Avg direct Accuracy = ", total_direct_acc/len(input_order),"fraction :", num_iss/len(input_order))
-                    epoch_data.append([train_loss_value, test_loss_value,total_neighbor_acc/len(input_order), total_direct_acc/len(input_order)])
+                    epoch_data.append([train_loss_value, test_loss_value, train_acc, test_acc])
                     np.save(CKPT_DIR + "/" + model_str + '/epoch_data_' + model_str, epoch_data)
                     # print(encoder_input_data, decoder_input_data, targets_data)
                     # print(inps_)
@@ -232,7 +220,7 @@ class ClassifierNetwork(object):
 def getModelStr():
     model_str = "Unsup-CNN_" if FLAGS.use_cnn else "Unsup-MLP_"
     model_str += "learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) 
-    model_str += "_reg-" + str(FLAGS.reg) if FLAGS.dp < 0.0 else "_dp-" + str(FLAGS.dp)
+    model_str += "_reg-" + str(FLAGS.reg) 
     model_str += "_optimizer-" + FLAGS.optimizer
     if FLAGS.tune_vgg: model_str += '_tuneVGG'
     return model_str
