@@ -40,7 +40,7 @@ flags.DEFINE_float('reg', 0.001, 'regularization on model parameters') # HYPER-P
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
 flags.DEFINE_bool("use_jigsaws", False, "whether to use jigsaws for training")
-flags.DEFINE_string("model_path", "model_ckpts/CNN_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.008_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_used-attn-one-hot/CNN_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.008_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_used-attn-one-hot", "the path to the checkpointed model") #HYPER-PARAMS
+flags.DEFINE_string("model_path", "model_ckpts/CNN_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.001_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_used-attn-one-hot/CNN_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.001_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_used-attn-one-hot", "the path to the checkpointed model") #HYPER-PARAMS
 
 
 class ClassifierNetwork(object):
@@ -156,6 +156,7 @@ class ClassifierNetwork(object):
              var_dict = {}
              for tf_var in tf.trainable_variables():
                 if "fc_vgg" in tf_var.name:
+                    print(tf_var.name)
                     var_dict[tf_var.name] = tf_var 
              jig_saver = tf.train.Saver(var_dict)
         config = tf.ConfigProto(allow_soft_placement=True)
