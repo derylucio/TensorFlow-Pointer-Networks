@@ -25,4 +25,4 @@ module load cudnn/5.1
 module load cuda80/blas/8.0.44
 module load cuda80/toolkit/8.0.44
 
-srun --partition=k80 --gres=gpu:2 python unsupervised_main.py --train_data=5120
+srun --partition=k80 --gres=gpu:2 python unsupervised_main.py --train_data=1280
