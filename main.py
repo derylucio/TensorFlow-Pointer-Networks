@@ -249,7 +249,9 @@ class PointerNetwork(object):
         loss = tf.reduce_mean(loss) / (FLAGS.max_steps  + 1)
         reg_loss = 0
         var_list = []
+        special = {} 
         for tf_var in tf.trainable_variables():
+            if("fc_vgg" in tf_var.name): special[tf_var.name] = tf_var
             if not ('Bias' in tf_var.name):
                 if use_cnn and ( not ('vgg_16' in tf_var.name) or tune_vgg):
                     if 'vgg_16' in tf_var.name : print('Added vgg weights for training')
@@ -283,9 +285,11 @@ class PointerNetwork(object):
         all_order = 0
         epoch_data = []
         ckpt_file = CKPT_DIR + "/" + model_str + "/" + model_str
+        specials_file = CKPT_DIR + "/" + model_str + "/specials"
         saver = tf.train.Saver()
         config = tf.ConfigProto(allow_soft_placement=True)
         test_losses = []
+        special_saver = tf.train.Saver(special)
         with tf.Session(config=config) as sess:
             merged = tf.summary.merge_all()
             train_writer = tf.summary.FileWriter("/tmp/" + model_str + "/train", sess.graph)
@@ -338,6 +342,7 @@ class PointerNetwork(object):
                 if i > 0 and min(test_losses) >= test_loss_value:
                     print("We are saving the chekpoints") 
                     saver.save(sess, ckpt_file)
+                    special_saver.save(sess, specials_file)
                 if i > 0 and  i % 50 == 0 :
                     total_neighbor_acc = 0.0
                     total_direct_acc = 0.0
