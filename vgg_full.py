@@ -42,6 +42,8 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
+from tensorflow.contrib import layers
+from tensorflow.contrib.layers.python.layers import layers as layers_lib
 
 slim = tf.contrib.slim
 
@@ -65,7 +67,7 @@ def vgg_arg_scope(weight_decay=0.0005):
 
 def vgg_16(inputs,
            is_training=True,
-           dropout_keep_prob=0.5,
+           dropout_keep_prob=1.0,
            scope='vgg_16',
            fc_conv_padding='VALID'):
   

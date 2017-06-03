@@ -12,11 +12,11 @@ sys.path.append('utils/')
 import fitness_vectorized as fv
 
 
-NUM_TEST = 256#512
-NUM_TRAIN = 1280#10240
-NUM_VAL = 512#1024
+NUM_TEST = 512#1024#512
+NUM_TRAIN = 1280#256#10240
+NUM_VAL = 1024#1024
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
-DIMS=(64, 64, 3)
+DIMS=(224, 224, 3)
 
 TRAIN_DIR = "data/data_train"
 VAL_DIR = "data/data_val"
@@ -38,7 +38,7 @@ NUM_CATS = len(categories)
 
 
 
-def getData(puzzle_height, puzzle_width, use_cnn=False):
+def getData(puzzle_height, puzzle_width, use_cnn=False, jiggle=True, image_dim=64):
 	'''
 	returns 
 	data:   data['val'] = (x_val, onehot_cat, y_val, val_seq_len)
@@ -49,6 +49,8 @@ def getData(puzzle_height, puzzle_width, use_cnn=False):
 			seq_len = [batch_size, ] # for each image in that batch, the number of pieces it is cut int
 	'''
 	H, W = puzzle_height, puzzle_width
+	if image_dim: DIMS=(image_dim, image_dim, 3)
+	if not jiggle: fv.JIGGLE_ROOM = 0
 	train = loadImages(TRAIN_DIR, NUM_TRAIN, H, W, dims=DIMS)
 	val = loadImages(VAL_DIR, NUM_VAL, H, W, dims=DIMS)
 	test = loadImages(TEST_DIR, NUM_TEST, H, W, dims=DIMS)

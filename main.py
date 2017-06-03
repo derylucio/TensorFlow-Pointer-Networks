@@ -26,7 +26,7 @@ flags = tf.app.flags
 FLAGS = flags.FLAGS
 flags.DEFINE_integer('batch_size', 64, 'Batch size')
 flags.DEFINE_integer('max_steps', 9, 'Maximum number of pieces in puzzle')
-flags.DEFINE_integer('rnn_size', 500, 'RNN size.  ') # HYPER-PARAMS
+flags.DEFINE_integer('rnn_size', 400, 'RNN size.  ') # HYPER-PARAMS
 flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
 flags.DEFINE_integer('puzzle_height', 3, 'Puzzle Height')
 flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
@@ -69,7 +69,7 @@ class PointerNetwork(object):
         """
         self.init = tf.contrib.layers.variance_scaling_initializer()
         self.batch_size = batch_size
-        self.learning_rate = tf.Variable(float(learning_rate), trainable=False)
+        self.learning_rate = tf.Variable(float(learning_rate), trainable=True)
         self.learning_rate_decay_op = self.learning_rate.assign(
             self.learning_rate * learning_rate_decay_factor)
         self.global_step = tf.Variable(0, trainable=False)
@@ -250,6 +250,7 @@ class PointerNetwork(object):
         reg_loss = 0
         var_list = []
         for tf_var in tf.trainable_variables():
+            #print(tf_var.name)
             if not ('Bias' in tf_var.name):
                 if use_cnn and ( not ('vgg_16' in tf_var.name) or tune_vgg):
                     if 'vgg_16' in tf_var.name : print('Added vgg weights for training')
@@ -336,6 +337,7 @@ class PointerNetwork(object):
                 input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
                 input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
                 if i > 0 and min(test_losses) >= test_loss_value: 
+                    print("saving info because of improvement")
                     saver.save(sess, ckpt_file)
                 if i > 0 and  i % 50 == 0 :
                     total_neighbor_acc = 0.0

@@ -25,13 +25,13 @@ CKPT_DIR = "model_ckpts"
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 flags.DEFINE_integer('batch_size', 64, 'Batch size')
-flags.DEFINE_integer('max_steps', 9, 'Maximum number of pieces in puzzle')
-flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
-flags.DEFINE_integer('puzzle_height', 3, 'Puzzle Height')
-flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
+flags.DEFINE_integer('max_steps', 1, 'Maximum number of pieces in puzzle')
+flags.DEFINE_integer('puzzle_width', 1, 'Puzzle Width')
+flags.DEFINE_integer('puzzle_height', 1, 'Puzzle Height')
+flags.DEFINE_integer('image_dim', 224, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
 flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate') # Hyper param
 flags.DEFINE_integer('fc_dim', 256, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
-flags.DEFINE_integer('vgg_dim', 2048, 'Dimensionality flattnened vgg pool feature') 
+flags.DEFINE_integer('vgg_dim', 4096, 'Dimensionality flattnened vgg pool feature') 
 flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPER-PARAMS
 flags.DEFINE_integer('nb_epochs', 10000, 'the number of epochs to run')
 flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HYPER-PARAMS
@@ -40,11 +40,11 @@ flags.DEFINE_float('reg', 0.001, 'regularization on model parameters') # HYPER-P
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
 flags.DEFINE_bool("use_jigsaws", False, "whether to use jigsaws for training")
-flags.DEFINE_string("model_path", "", "the path to the checkpointed model") #HYPER-PARAMS
+flags.DEFINE_string("model_path", "model_ckpts/CNN_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.008_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_used-attn-one-hot/CNN_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.008_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_used-attn-one-hot", "the path to the checkpointed model") #HYPER-PARAMS
 
 
 class ClassifierNetwork(object):
-    def __init__(self, max_len, input_size, batch_size, learning_rate, learning_rate_decay_factor, fc_dim, image_dim, vgg_dim, num_clases = 256, use_jigsaws=False):
+    def __init__(self, max_len, batch_size, learning_rate, learning_rate_decay_factor, fc_dim, image_dim, vgg_dim, num_classes = 256, use_jigsaws=False):
         """Create the network. A simplified network that handles only sorting.
         
         Args:
@@ -68,48 +68,40 @@ class ClassifierNetwork(object):
         self.keep_prob = tf.placeholder(tf.float32, name="dropout_pbty")
         # https://github.com/devsisters/pointer-network-tensorflow/blob/master/model.py#L148 
 
-        self.inputs = []
-        self.targets = []
-        for i in range(max_len):
-            i_size = [batch_size, input_size] if not use_cnn else [batch_size, image_dim, image_dim, 3]
-            self.inputs.append(tf.placeholder(
-                tf.float32, i_size, name="EncoderInput%d" % i))
-
-        for i in range(max_len + 1):
-            i_size = [batch_size, input_size] if not use_cnn else [batch_size, image_dim, image_dim, 3]
-            self.targets.append(tf.placeholder(
-                tf.float32, [batch_size, max_len + 1], name="DecoderTarget%d" % i))  # one hot
+        i_size = [batch_size, image_dim, image_dim, 3] if not use_jigsaws else [batch_size, max_len, image_dim, image_dim, 3]
+        self.inputs = tf.placeholder(tf.float32, i_size, name="inputs")
+        self.targets = tf.placeholder(tf.float32, [batch_size, num_classes], name="Targets")  # one hot
 
         # Encoder
         # Neeed to pass both encode inputs and everything through a dense layer.
         cnn_f_extractor = CNN_FeatureExtractor()
-        stacked_ins = tf.stack(self.inputs)
-        stacked_ins = tf.reshape(stacked_ins, [-1, image_dim, image_dim, 3])
+        stacked_ins = tf.reshape(self.inputs, [-1, image_dim, image_dim, 3])
+        print("SHAPERS ", stacked_ins.get_shape())
         if not use_jigsaws: fc_dim = num_classes
-        inputfn, features = cnn_f_extractor.getCNNFEatures(stacked_ins, vgg_dim, fc_dim, self.init, use_full=use_jigsaws)
+        inputfn, features = cnn_f_extractor.getCNNFEatures(stacked_ins, vgg_dim, fc_dim, self.init, use_full=(not use_jigsaws))
         # non - jigsaw
         self.inputfn = inputfn
         if use_jigsaws:
-            variables_to_restore = tf.contrib.framework.get_variables_to_restore()
-            variables_to_restore = [var for var in variables_to_restore if 'fc_vgg' in var.name] # only use vgg things!
-            jig_init = tf.contrib.framework.assign_from_checkpoint_fn(FLAGS.model_path, variables_to_restore)
-            self.jig_init = jig_init
+            #variables_to_restore = tf.contrib.framework.get_variables_to_restore()
+            #variables_to_restore = [var for var in variables_to_restore if 'fc_vgg' in var.name] # only use vgg things!
+            #jig_init = tf.contrib.framework.assign_from_checkpoint_fn(FLAGS.model_path, variables_to_restore)
+            #self.jig_init = jig_init
+            print("features after conv ", features.get_shape())
             features = tf.reshape(features, [-1, max_len*fc_dim])
+            print("jig features_shape ", features.get_shape())
             with vs.variable_scope("class_scope"):
-	        W = vs.get_variable("W", [max_len*fc_dim,  num_classes], initializer=fc_initializer)
-                b = vs.get_variable("b", [num_classes], initializer=fc_initializer)
-                features = tf.nn.relu(tf.matmul(flattened, W) + b)
-        
-         self.outputs = tf.reshape(features, [-1, num_classes])
+                W = vs.get_variable("W", [max_len*fc_dim,  num_classes], initializer=self.init)
+                b = vs.get_variable("b", [num_classes], initializer=self.init)
+                features = tf.nn.relu(tf.matmul(features, W) + b)
+        print("feature shape ", features.get_shape())
+        self.outputs = tf.reshape(features, [-1, num_classes])
+        #print("features shape now : ", len(self.outputs), " ", self.outputs[0].get_shape())
            
 
     def create_feed_dict(self, input_data, target_data, keep_prob):
         feed_dict = {}
-        for placeholder, data in zip(self.inputs, encoder_input_data):
-            feed_dict[placeholder] = data
-
-        for placeholder, data in zip(self.targets, target_data):
-            feed_dict[placeholder] = data
+        feed_dict[self.inputs] = input_data
+        feed_dict[self.targets] = target_data
 
         feed_dict[self.keep_prob] = keep_prob
         return feed_dict
@@ -129,8 +121,8 @@ class ClassifierNetwork(object):
     def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, model_str, load_frm_ckpts, tune_vgg=False, use_jigsaws=False):
 
         loss = 0.0
-        for output, target, weight in zip(self.outputs, self.targets, self.target_weights):
-            loss += tf.nn.softmax_cross_entropy_with_logits(logits=output, labels=target) * weight
+        print(self.outputs.get_shape(), self.targets.get_shape())
+        loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.outputs,  labels=self.targets)
         loss = tf.reduce_mean(loss) 
         reg_loss = 0
         var_list = []
@@ -144,7 +136,7 @@ class ClassifierNetwork(object):
                     var_list.append(tf_var)
                     reg_loss += tf.nn.l2_loss(tf_var)
         
-        loss += reg * reg_loss if FLAGS.dp < 0.0 else 0.0
+        loss += reg * reg_loss 
         tf.summary.scalar('train_loss', loss) # Sanya
 
         optimizer = self.getOptimizer(optim) #tf.train.AdamOptimizer()
@@ -160,6 +152,12 @@ class ClassifierNetwork(object):
         epoch_data = []
         ckpt_file = CKPT_DIR + "/" + model_str + "/" + model_str
         saver = tf.train.Saver()
+        if use_jigsaws: 
+             var_dict = {}
+             for tf_var in tf.trainable_variables():
+                if "fc_vgg" in tf_var.name:
+                    var_dict[tf_var.name] = tf_var 
+             jig_saver = tf.train.Saver(var_dict)
         config = tf.ConfigProto(allow_soft_placement=True)
         test_losses = []
         with tf.Session(config=config) as sess:
@@ -170,7 +168,9 @@ class ClassifierNetwork(object):
             init = tf.global_variables_initializer()
             sess.run(init)
             self.inputfn(sess)
-            self.jig_init(sess)
+            #if use_jigsaws : self.jig_init(sess)
+            if use_jigsaws:
+                jig_saver.restore(sess, FLAGS.model_path)
             if(load_frm_ckpts): 
                 print("Restoring Ckpts at : ", ckpt_file)
                 saver.restore(sess, ckpt_file)
@@ -182,8 +182,9 @@ class ClassifierNetwork(object):
                     FLAGS.batch_size, FLAGS.max_steps)
 
                 # Train
-                feed_dict = self.create_feed_dict(input_data, targets_data, FLAGS.dp)
-                d_x, d_reg, l, summary, train_pred = sess.run([loss, reg_loss, train_op, merged, sel.outputs], feed_dict=feed_dict)
+                print("inputs : ", np.shape(input_data), " targets : ", np.shape(targets_data))
+                feed_dict = self.create_feed_dict(input_data, targets_data, 1.0)
+                d_x, d_reg, l, summary, train_pred = sess.run([loss, reg_loss, train_op, merged, self.outputs], feed_dict=feed_dict)
                 train_loss_value = d_x #0.9 * train_loss_value + 0.1 * d_x
                 train_writer.add_summary(summary, i)
 
@@ -198,7 +199,7 @@ class ClassifierNetwork(object):
                     FLAGS.batch_size, FLAGS.max_steps, train_mode=False)
                 # Test
                 feed_dict = self.create_feed_dict(input_data,  targets_data, 1.0)
-                test_loss_value, summary, test_pred  = sess.run([test_loss, merged, self.outputs], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
+                test_loss_value, summary, test_pred  = sess.run([loss, merged, self.outputs], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
                 test_writer.add_summary(summary, i)
                 test_losses.append(test_loss_value)
 
@@ -218,7 +219,7 @@ class ClassifierNetwork(object):
                     # print(inps_)
 
 def getModelStr():
-    model_str = "Unsup-CNN_" if FLAGS.use_cnn else "Unsup-MLP_"
+    model_str = "Unsup-JIGSAW_" if FLAGS.use_jigsaws else "Unsup-INIT_"
     model_str += "learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) 
     model_str += "_reg-" + str(FLAGS.reg) 
     model_str += "_optimizer-" + FLAGS.optimizer
@@ -238,7 +239,7 @@ if __name__ == "__main__":
     random.seed(RAND_SEED)
     np.random.seed(RAND_SEED)
     with tf.device('/gpu:0'):
-        classifier_network = ClassifierNetwork(FLAGS.max_steps, FLAGS.input_dim, FLAGS.batch_size, FLAGS.learning_rate, \
-                                        FLAGS.lr_decay, FLAGS.fc_dim, FLAGS.image_dim, FLAGS.vgg_dim, num_clases = 256, use_jigsaws=FLAGS.use_jigsaws)
-        dataset = DataGenerator(FLAGS.puzzle_width, FLAGS.puzzle_width, FLAGS.input_dim, FLAGS.use_cnn, FLAGS.image_dim)
-        classifier_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn, model_str,FLAGS.load_from_ckpts, tune_vgg=FLAGS.tune_vgg, use_jigsaws=FLAGS.use_jigsaws)
+        classifier_network = ClassifierNetwork(FLAGS.max_steps, FLAGS.batch_size, FLAGS.learning_rate, \
+                                        FLAGS.lr_decay, FLAGS.fc_dim, FLAGS.image_dim, FLAGS.vgg_dim, num_classes = 256, use_jigsaws=FLAGS.use_jigsaws)
+        dataset = DataGenerator(FLAGS.puzzle_width, FLAGS.puzzle_width, 1000, True, FLAGS.image_dim, unsup=True)
+        classifier_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, True, model_str,FLAGS.load_from_ckpts, tune_vgg=FLAGS.tune_vgg, use_jigsaws=FLAGS.use_jigsaws)
