@@ -11,7 +11,7 @@ one_hot = "True"
 lrs = [1e-4] #np.random.uniform(5e-4, 5e-6, 3)
 rnns  = [400]#, 300, 500]#400]#[100, 300, 400] 
 fc_dims = [256]#256]
-regs = [0.01]#, 1e-2, 1e-3]
+regs = [0.008]#, 1e-2, 1e-3]
 fnumber = 0
 dps = [-1]#0.7]
 for lr in lrs:
