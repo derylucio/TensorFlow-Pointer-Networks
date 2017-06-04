@@ -25,7 +25,7 @@ CKPT_DIR = "model_ckpts"
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 flags.DEFINE_integer('batch_size', 64, 'Batch size')
-flags.DEFINE_integer('max_steps', 6, 'Maximum number of pieces in puzzle')
+flags.DEFINE_integer('max_steps', 8, 'Maximum number of pieces in puzzle')
 flags.DEFINE_integer('rnn_size', 400, 'RNN size.  ') # HYPER-PARAMS
 flags.DEFINE_integer('puzzle_width', 4, 'Puzzle Width')
 flags.DEFINE_integer('puzzle_height', 2, 'Puzzle Height')
@@ -385,5 +385,5 @@ if __name__ == "__main__":
                                          FLAGS.num_layers, 5, FLAGS.batch_size, FLAGS.learning_rate, \
                                         FLAGS.lr_decay, FLAGS.inter_dim, \
                                         FLAGS.fc_dim, FLAGS.use_cnn, FLAGS.image_dim, FLAGS.vgg_dim, FLAGS.bidirect)
-        dataset = DataGenerator(FLAGS.puzzle_width, FLAGS.puzzle_width, FLAGS.input_dim, FLAGS.use_cnn, FLAGS.image_dim)
+        dataset = DataGenerator(FLAGS.puzzle_height, FLAGS.puzzle_width, FLAGS.input_dim, FLAGS.use_cnn, FLAGS.image_dim)
         pointer_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn, model_str,FLAGS.load_from_ckpts, tune_vgg=FLAGS.tune_vgg)
