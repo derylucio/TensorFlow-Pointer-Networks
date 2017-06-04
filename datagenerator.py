@@ -13,7 +13,7 @@ import fitness_vectorized as fv
 
 
 NUM_TEST = 512
-NUM_TRAIN = 10240
+NUM_TRAIN = 5120 #10240
 NUM_VAL = 1024
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(64, 64, 3)
@@ -107,7 +107,7 @@ def shuffleAndReshapeData(args, keep_shape=True):
 	if not keep_shape:
 		X = X.reshape(N, L, -1)		# TODO: Update once verified. 
 		print("Reshaped to new shape {0}.".format(X.shape))
-	
+	del X
 	y_onehot_shuff = np.where(y_shuff[:,:,np.newaxis] == np.arange(L), 1, 0)
 	seq = np.ones((len(X_shuff))) * L
 	
@@ -158,7 +158,8 @@ def loadImages(directory, N, H, W, dims=(32,32,3)):
 	new_list = []
 	for result in results:
 		new_list.extend(result)
-	#print(np.shape(new_list))
+	del results
+        #prinddt(np.shape(new_list))
 	print("Normalizing Images")
 	imgs = np.array(new_list)
 	#imgs -= np.mean(imgs, axis = 0)
@@ -171,7 +172,7 @@ def loadImages(directory, N, H, W, dims=(32,32,3)):
 		img[:, :, 2] -= _B_MEAN
 		#print(np.shape(img))
 		X.append(np.array(fv.splitImage(H, W, img, dims)))
-
+	del imgs
 	print("Loaded %d Images from %s" % (len(X), directory))
 	# assert(len(X) == N)
 	return np.array(X), np.array(cats), np.array(fnames)
