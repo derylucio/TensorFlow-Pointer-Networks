@@ -38,7 +38,6 @@ class DataGenerator(object):
         for _ in range(N):
             reader_input_batch.append(np.zeros(size))
             decoder_input_batch.append(np.zeros(size))
-
         for _ in range(N + 1):
             #decoder_input_batch.append(np.zeros(size))
             writer_outputs_batch.append(np.zeros([batch_size, N + 1]))

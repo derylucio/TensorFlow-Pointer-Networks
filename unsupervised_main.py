@@ -25,10 +25,10 @@ CKPT_DIR = "model_ckpts"
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 flags.DEFINE_integer('batch_size', 32, 'Batch size')
-flags.DEFINE_integer('max_steps', 1, 'Maximum number of pieces in puzzle')
-flags.DEFINE_integer('puzzle_width', 1, 'Puzzle Width')
-flags.DEFINE_integer('puzzle_height', 1, 'Puzzle Height')
-flags.DEFINE_integer('image_dim', 224, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
+flags.DEFINE_integer('max_steps', 4, 'Maximum number of pieces in puzzle')
+flags.DEFINE_integer('puzzle_width', 2, 'Puzzle Width')
+flags.DEFINE_integer('puzzle_height', 2, 'Puzzle Height')
+flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
 flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate') # Hyper param
 flags.DEFINE_integer('fc_dim', 256, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
 flags.DEFINE_integer('vgg_dim', 4096, 'Dimensionality flattnened vgg pool feature') 
@@ -130,6 +130,7 @@ class ClassifierNetwork(object):
             if not ('Bias' in tf_var.name):
                 if use_cnn and ( not ('vgg_16' in tf_var.name) or tune_vgg):
                     if 'vgg_16' in tf_var.name : print('Added vgg weights for training')
+                    if 'fc_vgg' in tf_var.name : continue
                     var_list.append(tf_var)
                     reg_loss += tf.nn.l2_loss(tf_var)
                 else:
@@ -171,6 +172,7 @@ class ClassifierNetwork(object):
             self.inputfn(sess)
             #if use_jigsaws : self.jig_init(sess)
             if use_jigsaws:
+                print("Restoring the special weights")
                 jig_saver.restore(sess, FLAGS.model_path)
             if(load_frm_ckpts): 
                 print("Restoring Ckpts at : ", ckpt_file)
@@ -183,7 +185,6 @@ class ClassifierNetwork(object):
                     FLAGS.batch_size, FLAGS.max_steps)
 
                 # Train
-                print("inputs : ", np.shape(input_data), " targets : ", np.shape(targets_data))
                 feed_dict = self.create_feed_dict(input_data, targets_data, 0.5)
                 d_x, d_reg, l, summary, train_pred = sess.run([loss, reg_loss, train_op, merged, self.outputs], feed_dict=feed_dict)
                 train_loss_value = d_x #0.9 * train_loss_value + 0.1 * d_x
@@ -200,7 +201,7 @@ class ClassifierNetwork(object):
                     FLAGS.batch_size, FLAGS.max_steps, train_mode=False)
                 # Test
                 feed_dict = self.create_feed_dict(input_data,  targets_data, 1.0)
-                test_loss_value, summary, test_pred  = sess.run([loss, merged, self.outputs], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
+                test_loss_value, summary, test_pred, d_reg  = sess.run([loss, merged, self.outputs, reg_loss], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
                 test_writer.add_summary(summary, i)
                 test_losses.append(test_loss_value)
 
