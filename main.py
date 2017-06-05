@@ -338,7 +338,7 @@ class PointerNetwork(object):
                 predictions_order = np.concatenate([np.expand_dims(prediction, 0) for prediction in predictions])
                 #print("Here are the predictions", np.transpose(predictions_order, (1, 0, 2))[0])
                 #print ("Here are the maxinds ", indices[0])
-                #predictions_order = np.argmax(predictions_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
+                predictions_order = np.argmax(predictions_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
 
                 input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
                 input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
