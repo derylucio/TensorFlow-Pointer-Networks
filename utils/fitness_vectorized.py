@@ -1,7 +1,9 @@
+import gc
 import numpy as np
 import scipy.misc
 from numpy import array
 from skimage.transform import resize
+JIGGLE_ROOM = 20
 
 def fitnessScore(piece1, piece2, orientation):
     """ 
@@ -34,11 +36,18 @@ def splitImage(numRows, numCols, image, piece_dims=(32,32,3)):
     # resized_img = np.array(resize(image, (large_width, large_height, large_depth), 
     #                         preserve_range=True, mode='reflect')).astype(dtype=np.uint8)
     resized_img = image
+    updated_pieced_dims = (piece_height + JIGGLE_ROOM, piece_width + JIGGLE_ROOM, piece_depth)
     #print(np.shape(image))
-    hsplits = np.array(np.split(resized_img, piece_width * np.arange(1, numCols), axis=1))
-    vsplits = np.array(np.split(hsplits, piece_height * np.arange(1, numRows), axis=1)) # Not 1 since we introduce one more dim.
-    split_images = vsplits.reshape(-1, *piece_dims)
-    return split_images
+    hsplits = np.array(np.split(resized_img, numCols, axis=1))
+    vsplits = np.array(np.split(hsplits, numRows, axis=1)) # Not 1 since we introduce one more dim.
+    split_images = vsplits.reshape(-1, *updated_pieced_dims)
+    #jiggled_imgs = []
+    #for image in split_images:
+    #    x_start = np.random.randint(0, JIGGLE_ROOM, 1)[0]
+    #    y_start = np.random.randint(0, JIGGLE_ROOM, 1)[0]
+    #    jiggled_imgs.append(image[x_start:(x_start + piece_height), y_start:(y_start + piece_width) , :])
+    #gc.collect()
+    return split_images #jiggled_imgs
 
 # # TESTS
 # ## Fitness Score ##

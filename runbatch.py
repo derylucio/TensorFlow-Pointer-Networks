@@ -6,7 +6,7 @@ with open('runbatch', 'r') as myfile:
     template = myfile.read()
 
 load_from_ckpts = "False" # "False"
-cell_type = "LSTM"
+cell_type = "GRU"
 one_hot = "True"
 lrs = [1e-4]    
 rnns  = [800]  

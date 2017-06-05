@@ -25,10 +25,10 @@ CKPT_DIR = "model_ckpts"
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 flags.DEFINE_integer('batch_size', 64, 'Batch size')
-flags.DEFINE_integer('max_steps', 9, 'Maximum number of pieces in puzzle')
+flags.DEFINE_integer('max_steps', 4, 'Maximum number of pieces in puzzle')
 flags.DEFINE_integer('rnn_size', 400, 'RNN size.  ') # HYPER-PARAMS
-flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
-flags.DEFINE_integer('puzzle_height', 3, 'Puzzle Height')
+flags.DEFINE_integer('puzzle_width', 2, 'Puzzle Width')
+flags.DEFINE_integer('puzzle_height', 2, 'Puzzle Height')
 flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
 flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate') # Hyper param
 flags.DEFINE_integer('inter_dim', 4096, 'Dimension of intermediate state - if using fully connected' ) # HYPER-PARAMS
@@ -249,7 +249,9 @@ class PointerNetwork(object):
         loss = tf.reduce_mean(loss) / (FLAGS.max_steps  + 1)
         reg_loss = 0
         var_list = []
+        special = {} 
         for tf_var in tf.trainable_variables():
+            if("fc_vgg" in tf_var.name): special[tf_var.name] = tf_var
             if not ('Bias' in tf_var.name):
                 if use_cnn and ( not ('vgg_16' in tf_var.name) or tune_vgg):
                     if 'vgg_16' in tf_var.name : print('Added vgg weights for training')
@@ -283,9 +285,11 @@ class PointerNetwork(object):
         all_order = 0
         epoch_data = []
         ckpt_file = CKPT_DIR + "/" + model_str + "/" + model_str
+        specials_file = CKPT_DIR + "/" + model_str + "/specials"
         saver = tf.train.Saver()
         config = tf.ConfigProto(allow_soft_placement=True)
         test_losses = []
+        special_saver = tf.train.Saver(special)
         with tf.Session(config=config) as sess:
             merged = tf.summary.merge_all()
             train_writer = tf.summary.FileWriter("/tmp/" + model_str + "/train", sess.graph)
@@ -324,8 +328,7 @@ class PointerNetwork(object):
 
                 predictions = sess.run(self.predictions, feed_dict=feed_dict)
 
-                test_loss_value, summary, p = sess.run([test_loss, merged, self.print_out], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
-                #print(p)
+                test_loss_value, summary = sess.run([test_loss, merged], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
                 test_writer.add_summary(summary, i)
                 test_losses.append(test_loss_value)
                 if i % 1 == 0:
@@ -336,8 +339,10 @@ class PointerNetwork(object):
 
                 input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
                 input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
-                if i > 0 and min(test_losses) >= test_loss_value: 
+                if i > 0 and min(test_losses) >= test_loss_value:
+                    print("We are saving the chekpoints") 
                     saver.save(sess, ckpt_file)
+                    special_saver.save(sess, specials_file)
                 if i > 0 and  i % 50 == 0 :
                     total_neighbor_acc = 0.0
                     total_direct_acc = 0.0
@@ -356,7 +361,7 @@ class PointerNetwork(object):
 
 def getModelStr():
     model_str = "CNN_" if FLAGS.use_cnn else "MLP_"
-    model_str += "rnn_size-" + str(FLAGS.rnn_size) + "_learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) + "_num-glimpses-" + str(FLAGS.num_glimpses)
+    model_str += "max_steps" + str(FLAGS.max_steps) + "_rnn_size-" + str(FLAGS.rnn_size) + "_learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) + "_num-glimpses-" + str(FLAGS.num_glimpses)
     model_str += "_reg-" + str(FLAGS.reg) if FLAGS.dp < 0.0 else "_dp-" + str(FLAGS.dp)
     model_str += "_optimizer-" + FLAGS.optimizer + "_bidirect-" +  str(FLAGS.bidirect) + "_cell-type-" + FLAGS.cell_type + "_num_layers-" + str(FLAGS.num_layers)
     if FLAGS.tune_vgg: model_str += '_tuneVGG'

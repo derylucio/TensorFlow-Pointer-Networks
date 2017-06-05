@@ -15,7 +15,7 @@
 
 import tensorflow as tf
 import os
-import vgg   
+import vgg
 import tensorflow.contrib.slim as slim
 from tensorflow.python.ops import variable_scope as vs
 #import tensorflow.contrib.slim.nets
@@ -25,7 +25,7 @@ class  CNN_FeatureExtractor(object):
 		self.checkpoints_dir = "ckpts"
 		self.ckpt_name = 'vgg_16.ckpt' 
 
-	def getCNNFEatures(self, input_tensor, fc_dim, out_dim, fc_initializer):
+	def getCNNFEatures(self, input_tensor, fc_dim, out_dim, fc_initializer, use_full=False):
 		graph = tf.Graph()
 
 		with graph.as_default():

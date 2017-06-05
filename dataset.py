@@ -4,6 +4,8 @@ import numpy as np
 import sys
 
 from datagenerator import getData
+sys.path.append('utils/')
+from fitness_vectorized import JIGGLE_ROOM
 
 class DataGenerator(object):
 
@@ -49,8 +51,20 @@ class DataGenerator(object):
             self.curr_test_pos += 1
             if batch_size*self.curr_test_pos >= len(x): self.curr_test_pos = 0
         pos = self.curr_train_pos if train_mode else self.curr_test_pos
-        x, y = x[pos*batch_size:(pos  + 1)*batch_size], y[pos*batch_size:(pos  + 1)*batch_size]
-	
+        #print("before ", np.shape(x))
+        split_images, y = x[pos*batch_size:(pos  + 1)*batch_size], y[pos*batch_size:(pos  + 1)*batch_size]
+        split_images = np.reshape(split_images, (-1, self.image_dim + JIGGLE_ROOM, self.image_dim + JIGGLE_ROOM, 3))
+        #print("before reshape ", np.shape(split_images))
+        x = []
+        for image in split_images: 
+            x_start = np.random.randint(0, JIGGLE_ROOM, 1)[0]
+            y_start = np.random.randint(0, JIGGLE_ROOM, 1)[0]
+            updated = image[x_start:(x_start + self.image_dim), y_start:(y_start + self.image_dim) , :]
+            x.append(updated) 
+        x = np.array(x)
+        #print("After", np.shape(x))
+        x = np.reshape(x , (-1, self.puzzle_height * self.puzzle_width,  self.image_dim, self.image_dim, 3))
+        #print("After reshape", np.shape(x))
         for b in range(batch_size):
             for i in range(N):
                 reader_input_batch[i][b] = x[b][i]

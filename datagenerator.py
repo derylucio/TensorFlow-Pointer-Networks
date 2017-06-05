@@ -67,7 +67,7 @@ def getReshapedImages(args):
 	imgList, H, W, dims = args
 	new_list = []
 	for i, img in enumerate(imgList):
-		large_width, large_height, large_depth = H * dims[0], W * dims[1], dims[2] 
+		large_width, large_height, large_depth = H * (dims[0] + fv.JIGGLE_ROOM), W * (dims[1] + fv.JIGGLE_ROOM), dims[2]  # modifying this to allow for jiggling
 		resized_img = np.array(resize(img, (large_width, large_height, large_depth), preserve_range=True, mode='reflect'))#.astype(dtype=np.uint8)
 		new_list.append(resized_img)
 		#print(np.shape(resized_img))
