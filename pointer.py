@@ -37,7 +37,7 @@ from tensorflow.python.ops import rnn
 from tensorflow.python.ops import sparse_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.contrib.rnn.python.ops import core_rnn_cell_impl
-
+import sys
 
 def pointer_decoder(decoder_inputs, initial_state, attention_states, cell,
                     feed_prev=False, one_hot=False,  dtype=dtypes.float32, scope=None, cell_type="LSTM", num_glimpses=0, num_layers=1):
@@ -97,6 +97,7 @@ def pointer_decoder(decoder_inputs, initial_state, attention_states, cell,
                     v * math_ops.tanh(hidden_features + y), [2, 3])
                 return s
 
+        curr_preds = []
         outputs = []
         prev = None
         batch_attn_size = array_ops.stack([batch_size, attn_size])
@@ -143,6 +144,22 @@ def pointer_decoder(decoder_inputs, initial_state, attention_states, cell,
                     _, new_state = cell(new_inp, states[-2])
                     if num_layers > 1: new_state = new_state[-1]
                     output = attention(new_state)
+                    
+            if feed_prev:
+                if len(curr_preds) > 1:
+                    temp_out  = tf.Variable(tf.zeros(output.get_shape()), trainable=False)
+                    temp_out = temp_out.assign(output)
+                    for max_inds in curr_preds:
+                        print("IN Here")
+                        rep_first_indices = tf.range(batch_size)
+                        inds = tf.stack([rep_first_indices, max_inds], axis=1)
+                        to_assign = tf.ones((batch_size, ))*(-sys.maxsize)
+                        to_assign = tf.cast(to_assign, tf.float32)
+                        temp_out = tf.scatter_nd_update(temp_out, inds, to_assign)
+                    output = temp_out #.read_value() 
+                max_inds = tf.cast(tf.argmax(output, 1), tf.int32)
+                curr_preds.append(max_inds)
+            
             outputs.append(output)
 
     return outputs, states, inps
