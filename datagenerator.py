@@ -3,7 +3,7 @@ import scipy.misc
 import scipy.ndimage
 import os
 import sys
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import multiprocessing
 import glob
@@ -12,9 +12,9 @@ sys.path.append('utils/')
 import fitness_vectorized as fv
 
 
-NUM_TEST = 512
-NUM_TRAIN = 10240
-NUM_VAL = 1024
+NUM_TEST = 256 #512
+NUM_TRAIN = 4096 #10240
+NUM_VAL = 512 # 1024
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(64, 64, 3)
 
