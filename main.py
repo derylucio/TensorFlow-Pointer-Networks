@@ -190,15 +190,15 @@ class PointerNetwork(object):
         attention_states = tf.concat(axis=1, values=top_states)
 
         with tf.variable_scope("decoder"):
-            outputs, states, _ = pointer_decoder(
+            outputs, states, _, _ = pointer_decoder(
                 self.proj_decoder_inputs, final_state, attention_states, decoder_cell, cell_type=FLAGS.cell_type, num_glimpses=FLAGS.num_glimpses, num_layers=num_layers)
         #print("DECODING")
         with tf.variable_scope("decoder", reuse=True):
-            predictions, _, inps = pointer_decoder(
+            predictions, _, inps, cp = pointer_decoder(
                 self.proj_decoder_inputs, final_state, attention_states, decoder_cell, feed_prev=True, one_hot=FLAGS.encoder_attn_1hot,  cell_type=FLAGS.cell_type, num_glimpses=FLAGS.num_glimpses, num_layers=num_layers)
 
         self.predictions = predictions
-
+        self.cps = tf.transpose(tf.stack(cp), (1, 0))
         self.outputs = outputs
         self.inps = inps
         # move code below to a separate function as in TF examples
@@ -328,13 +328,16 @@ class PointerNetwork(object):
 
                 predictions = sess.run(self.predictions, feed_dict=feed_dict)
 
-                test_loss_value, summary = sess.run([test_loss, merged], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
+                test_loss_value, summary, indices = sess.run([test_loss, merged, self.cps], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
                 test_writer.add_summary(summary, i)
                 test_losses.append(test_loss_value)
                 if i % 1 == 0:
                     print("Test: ", test_loss_value)
 
+                
                 predictions_order = np.concatenate([np.expand_dims(prediction, 0) for prediction in predictions])
+                #print("Here are the predictions", np.transpose(predictions_order, (1, 0, 2))[0])
+                #print ("Here are the maxinds ", indices[0])
                 predictions_order = np.argmax(predictions_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
 
                 input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
@@ -343,7 +346,7 @@ class PointerNetwork(object):
                     print("We are saving the chekpoints") 
                     saver.save(sess, ckpt_file)
                     special_saver.save(sess, specials_file)
-                if i > 0 :#and  i % 20  == 0 :
+                if i > 0 and  i % 20  == 0 :
                     total_neighbor_acc = 0.0
                     total_direct_acc = 0.0
                     num_iss = 0.0
