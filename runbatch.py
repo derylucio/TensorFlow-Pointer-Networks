@@ -1,27 +1,33 @@
 import os
 import numpy as np
 
-partition = "40"
+partition = "80"
 with open('runbatch', 'r') as myfile:
     template = myfile.read()
 
 load_from_ckpts = "False" # "False"
 cell_type = "GRU"
 one_hot = "True"
-lrs = [1e-4] #np.random.uniform(5e-4, 5e-6, 3)
-rnns  = [800]#, 300, 500]#400]#[100, 300, 400] 
-fc_dims = [1024]#256]
-regs = [0.001]#, 1e-2, 1e-3]
+lrs = [1e-4]    
+rnns  = [800]  
+fc_dims = [256, 512] 
+regs = [0.001] 
 fnumber = 0
-dps = [-1]#0.7]
+dps = [-1]      
+puzzle_height = 2
+puzzle_width = 2
+max_steps = puzzle_height * puzzle_width
+
 for lr in lrs:
-    for rnn in rnns:
+   for reg in regs:
        for fc_dim in fc_dims:
-           for reg in regs:
+            for rnn in rnns:
                for dp in dps:
                    attach = "srun --partition=k" + partition + " --gres=gpu:2 python main.py "
                    attach += "--learning_rate " + str(lr) + " --rnn_size " + str(rnn) + " --fc_dim " + str(fc_dim) + " --reg " + str(reg) + " --dp " + str(dp)\
-                           + " --load_from_ckpts " + load_from_ckpts + " --cell_type " + cell_type + " --encoder_attn_1hot " + one_hot
+                           + " --load_from_ckpts " + load_from_ckpts + " --cell_type " + cell_type + " --encoder_attn_1hot " + one_hot\
+                           + " --puzzle_height " + str(puzzle_height) + " --puzzle_width " + str(puzzle_width)\
+                           + " --max_steps " + str(max_steps)
                    newfile = template + "\n" + attach	
                    with open("runconfig" + str(fnumber), "w+") as nfile:
                        nfile.write(newfile)
