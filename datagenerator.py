@@ -13,7 +13,7 @@ import fitness_vectorized as fv
 
 
 NUM_TEST = 512#1024#512
-NUM_TRAIN = 1280 #256#10240
+NUM_TRAIN = 51240 #256#10240
 NUM_VAL = 1024#1024
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(224, 224, 3)
@@ -27,7 +27,7 @@ _R_MEAN = 123.68
 _G_MEAN = 116.78
 _B_MEAN = 103.94
 
-POOL_SIZE = 8		
+POOL_SIZE = 16		
 
 categories = sorted([os.path.basename(cat) for cat in glob.glob(TRAIN_DIR + "/*")])
 NUM_CATS = len(categories)
