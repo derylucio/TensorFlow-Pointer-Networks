@@ -380,6 +380,7 @@ def getModelStr():
     model_str += "_reg-" + str(FLAGS.reg) if FLAGS.dp < 0.0 else "_dp-" + str(FLAGS.dp)
     model_str += "_optimizer-" + FLAGS.optimizer + "_bidirect-" +  str(FLAGS.bidirect) + "_cell-type-" + FLAGS.cell_type + "_num_layers-" + str(FLAGS.num_layers)
     if FLAGS.tune_vgg: model_str += '_tuneVGG'
+    if FLAGS.resnet_cnn: model_str += '_resnetCNN'
     if FLAGS.encoder_attn_1hot: model_str += '_used-attn-one-hot'
     return model_str
 
