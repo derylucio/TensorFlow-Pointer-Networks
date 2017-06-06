@@ -12,9 +12,9 @@ sys.path.append('utils/')
 import fitness_vectorized as fv
 
 
-NUM_TEST = 256 #512
-NUM_TRAIN = 4096 #10240
-NUM_VAL = 512 # 1024
+NUM_TEST = 512
+NUM_TRAIN = 256 #1280 #4096 #10240
+NUM_VAL = 1024
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(64, 64, 3)
 
@@ -27,7 +27,7 @@ _R_MEAN = 123.68
 _G_MEAN = 116.78
 _B_MEAN = 103.94
 
-POOL_SIZE = 8		
+POOL_SIZE = 16
 
 categories = sorted([os.path.basename(cat) for cat in glob.glob(TRAIN_DIR + "/*")])
 NUM_CATS = len(categories)
@@ -138,23 +138,22 @@ def loadImages(directory, N, H, W, dims=(32,32,3)):
 		#print(num_per_cat)
 		# Seems more efficient to iterate over category dirs and get exact number
 		# of imgs per category. Hence, not using glob to load all imgs to disk.  
-		for dirname in sorted(os.listdir(directory)):
-			path = os.path.join(directory, dirname)
-			filenames = [os.path.join(path, fname) for fname in sorted(os.listdir(path))]
+        for dirname in sorted(os.listdir(directory)):
+            path = os.path.join(directory, dirname)
+            filenames = [os.path.join(path, fname) for fname in sorted(os.listdir(path))]
 
-			cats.extend([dirname] * len(filenames))
-			fnames.extend(filenames)
-			img_names.extend(filenames[:num_per_cat])
-	
-	# assert len(img_names) - N == 0, "len(imgs)={0:d} not equal to N={0:d}".format(len(img_names), N)
-	pool = multiprocessing.Pool(POOL_SIZE)
-	imgs = pool.map(readImg, img_names)
-
-	print("Resizing images.")
+            cats.extend([dirname] * len(filenames))
+            fnames.extend(filenames)
+            img_names.extend(filenames[:num_per_cat])
+    
+    pool = multiprocessing.Pool(POOL_SIZE)
+    imgs = pool.map(readImg, img_names)
+    
+    print("Resizing images.")
 	num_files = int(np.ceil(len(imgs) / POOL_SIZE))
 	pairs = [(imgs[num_files * i : num_files * (i + 1)], H, W, dims) for i in range(POOL_SIZE)]
 	results = pool.map(getReshapedImages, pairs)
-
+    
 	new_list = []
 	for result in results:
 		new_list.extend(result)
