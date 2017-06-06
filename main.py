@@ -24,15 +24,15 @@ CKPT_DIR = "model_ckpts"
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_integer('batch_size', 32, 'Batch size')
-flags.DEFINE_integer('max_steps', 4, 'Maximum number of pieces in puzzle')
-flags.DEFINE_integer('rnn_size', 400, 'RNN size.  ') # HYPER-PARAMS
-flags.DEFINE_integer('puzzle_width', 2, 'Puzzle Width')
+flags.DEFINE_integer('batch_size', 64, 'Batch size')
+flags.DEFINE_integer('max_steps', 6, 'Maximum number of pieces in puzzle')
+flags.DEFINE_integer('rnn_size', 800, 'RNN size.  ') # HYPER-PARAMS
+flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
 flags.DEFINE_integer('puzzle_height', 2, 'Puzzle Height')
 flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
 flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate') # Hyper param
 flags.DEFINE_integer('inter_dim', 4096, 'Dimension of intermediate state - if using fully connected' ) # HYPER-PARAMS
-flags.DEFINE_integer('fc_dim', 256, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
+flags.DEFINE_integer('fc_dim', 1024, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
 flags.DEFINE_integer('input_dim', 12288, 'Dimensionality of input images - use if flattened') 
 flags.DEFINE_integer('vgg_dim', 2048, 'Dimensionality flattnened vgg pool feature') 
 flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPER-PARAMS
@@ -49,6 +49,7 @@ flags.DEFINE_bool('encoder_attn_1hot', True, 'Whether to use linear combination 
 flags.DEFINE_float('dp', -1, "The rate to apply dropout. Put a negative value if you want to use l2regularization instead") #HYPER-PARAMS
 flags.DEFINE_integer('num_glimpses', 0, "The number of times to perform glimpses before final attention") # HYPTER-PARAMS
 flags.DEFINE_integer('num_layers', 2, 'Number of layers for the RNN') # SANYA testing
+flags.DEFINE_bool('test_mode', False, 'whether or not we are testing as opposed to training')
 
 class PointerNetwork(object):
     def __init__(self, max_len, input_size, size, num_layers, max_gradient_norm, batch_size, learning_rate,
@@ -198,7 +199,7 @@ class PointerNetwork(object):
                 self.proj_decoder_inputs, final_state, attention_states, decoder_cell, feed_prev=True, one_hot=FLAGS.encoder_attn_1hot,  cell_type=FLAGS.cell_type, num_glimpses=FLAGS.num_glimpses, num_layers=num_layers)
 
         self.predictions = predictions
-        self.cps = tf.transpose(tf.stack(cp), (1, 0))
+        #self.cps = tf.transpose(tf.stack(cp), (1, 0))
         self.outputs = outputs
         self.inps = inps
         # move code below to a separate function as in TF examples
@@ -250,7 +251,10 @@ class PointerNetwork(object):
         reg_loss = 0
         var_list = []
         special = {} 
+        #to_load = {}
         for tf_var in tf.trainable_variables():
+            print("trainable : ", tf_var.name)
+            #if "Variable_" not in tf_var.name: to_load[tf_var.name] = tf_var
             if("fc_vgg" in tf_var.name): special[tf_var.name] = tf_var
             if not ('Bias' in tf_var.name):
                 if use_cnn and ( not ('vgg_16' in tf_var.name) or tune_vgg):
@@ -289,6 +293,9 @@ class PointerNetwork(object):
         saver = tf.train.Saver()
         config = tf.ConfigProto(allow_soft_placement=True)
         test_losses = []
+        n_accs = []
+        d_accs = []
+        all_fnames = []
         special_saver = tf.train.Saver(special)
         with tf.Session(config=config) as sess:
             merged = tf.summary.merge_all()
@@ -301,6 +308,7 @@ class PointerNetwork(object):
             if(load_frm_ckpts): 
                 print("Restoring Ckpts at : ", ckpt_file)
                 saver.restore(sess, ckpt_file)
+            
             for i in range(nb_epochs):
                 if i > 0 and (i % lr_decay_period == 0):
                     sess.run([self.learning_rate_decay_op])
@@ -308,27 +316,26 @@ class PointerNetwork(object):
                 encoder_input_data, decoder_input_data, targets_data = dataset.next_batch(
                     FLAGS.batch_size, FLAGS.max_steps)
 
-                # Train
-                feed_dict = self.create_feed_dict(
-                    encoder_input_data, decoder_input_data, targets_data, FLAGS.dp)
-                d_x, d_reg, l, summary = sess.run([loss, reg_loss, train_op, merged], feed_dict=feed_dict)
-                train_loss_value = d_x #0.9 * train_loss_value + 0.1 * d_x
-                train_writer.add_summary(summary, i)
+                if not FLAGS.test_mode:# Train
+                    feed_dict = self.create_feed_dict(encoder_input_data, decoder_input_data, targets_data, FLAGS.dp)
+                    d_x, d_reg, l, summary = sess.run([loss, reg_loss, train_op, merged], feed_dict=feed_dict)
+                    train_loss_value = d_x #0.9 * train_loss_value + 0.1 * d_x
+                    train_writer.add_summary(summary, i)
 
-                if i % 1 == 0:
-                    print('Step: %d' % i)
-                    print("Train: ", train_loss_value - reg *d_reg, " reg:",  reg *d_reg)
+                    if i % 1 == 0:
+                        print('Step: %d' % i)
+                        print("Train: ", train_loss_value - reg *d_reg, " reg:",  reg *d_reg)
+                    encoder_input_data, decoder_input_data, targets_data = dataset.next_batch(FLAGS.batch_size, FLAGS.max_steps, train_mode=False)
+                else:
+                    encoder_input_data, decoder_input_data, targets_data, fnames  = dataset.next_batch(FLAGS.batch_size, FLAGS.max_steps, train_mode=False)
 
-                encoder_input_data, decoder_input_data, targets_data = dataset.next_batch(
-                    FLAGS.batch_size, FLAGS.max_steps, train_mode=False)
-                # Test
                 feed_dict = self.create_feed_dict(
                     encoder_input_data, decoder_input_data, targets_data, 1.0)
                 # inps_ = sess.run(self.inps, feed_dict=feed_dict)
 
                 predictions = sess.run(self.predictions, feed_dict=feed_dict)
 
-                test_loss_value, summary, indices = sess.run([test_loss, merged, self.cps], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
+                test_loss_value, summary = sess.run([test_loss, merged], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
                 test_writer.add_summary(summary, i)
                 test_losses.append(test_loss_value)
                 if i % 1 == 0:
@@ -342,10 +349,16 @@ class PointerNetwork(object):
 
                 input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
                 input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
-                if i > 0 and min(test_losses) >= test_loss_value:
+                if i > 0 and min(test_losses) >= test_loss_value and (not FLAGS.test_mode):
                     print("We are saving the chekpoints") 
                     saver.save(sess, ckpt_file)
                     special_saver.save(sess, specials_file)
+                if FLAGS.test_mode:
+                    all_fnames.extend(fnames)
+                    for correct, pred in zip(input_order, predictions_order):
+                        correct, pred = np.array(correct), np.array(pred)
+                        n_accs.append(NeighborAccuracy(correct, pred, (FLAGS.puzzle_height, FLAGS.puzzle_width)))
+                        d_accs.append(directAccuracy(correct, pred))
                 if i > 0 and  i % 20  == 0 :
                     total_neighbor_acc = 0.0
                     total_direct_acc = 0.0
@@ -361,6 +374,10 @@ class PointerNetwork(object):
                     np.save(CKPT_DIR + "/" + model_str + '/epoch_data_' + model_str, epoch_data)
                     # print(encoder_input_data, decoder_input_data, targets_data)
                     # print(inps_)
+        print("neighbor acc :", np.mean(n_accs), "direct acc: ", np.mean(d_accs))
+        np.save("n_accs" + model_str, n_accs)
+        np.save("d_accs" + model_str, d_accs)
+        np.save("fnames" + model_str, all_fnames)
 
 def getModelStr():
     model_str = "CNN_" if FLAGS.use_cnn else "MLP_"
@@ -388,5 +405,5 @@ if __name__ == "__main__":
                                          FLAGS.num_layers, 5, FLAGS.batch_size, FLAGS.learning_rate, \
                                         FLAGS.lr_decay, FLAGS.inter_dim, \
                                         FLAGS.fc_dim, FLAGS.use_cnn, FLAGS.image_dim, FLAGS.vgg_dim, FLAGS.bidirect)
-        dataset = DataGenerator(FLAGS.puzzle_height, FLAGS.puzzle_width, FLAGS.input_dim, FLAGS.use_cnn, FLAGS.image_dim)
+        dataset = DataGenerator(FLAGS.puzzle_height, FLAGS.puzzle_width, FLAGS.input_dim, FLAGS.use_cnn, FLAGS.image_dim, test_mode = FLAGS.test_mode)
         pointer_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn, model_str,FLAGS.load_from_ckpts, tune_vgg=FLAGS.tune_vgg)
