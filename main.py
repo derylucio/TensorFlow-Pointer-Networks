@@ -24,15 +24,15 @@ CKPT_DIR = "model_ckpts"
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_integer('batch_size', 64, 'Batch size')
-flags.DEFINE_integer('max_steps', 6, 'Maximum number of pieces in puzzle')
-flags.DEFINE_integer('rnn_size', 800, 'RNN size.  ') # HYPER-PARAMS
+flags.DEFINE_integer('batch_size', 32, 'Batch size')
+flags.DEFINE_integer('max_steps', 9, 'Maximum number of pieces in puzzle')
+flags.DEFINE_integer('rnn_size', 1000, 'RNN size.  ') # HYPER-PARAMS
 flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
-flags.DEFINE_integer('puzzle_height', 2, 'Puzzle Height')
+flags.DEFINE_integer('puzzle_height', 3, 'Puzzle Height')
 flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
 flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate') # Hyper param
 flags.DEFINE_integer('inter_dim', 4096, 'Dimension of intermediate state - if using fully connected' ) # HYPER-PARAMS
-flags.DEFINE_integer('fc_dim', 1024, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
+flags.DEFINE_integer('fc_dim', 256, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
 flags.DEFINE_integer('input_dim', 12288, 'Dimensionality of input images - use if flattened') 
 flags.DEFINE_integer('vgg_dim', 2048, 'Dimensionality flattnened vgg pool feature') 
 flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPER-PARAMS
@@ -253,7 +253,7 @@ class PointerNetwork(object):
         special = {} 
         #to_load = {}
         for tf_var in tf.trainable_variables():
-            print("trainable : ", tf_var.name)
+            #print("trainable : ", tf_var.name)
             #if "Variable_" not in tf_var.name: to_load[tf_var.name] = tf_var
             if("fc_vgg" in tf_var.name): special[tf_var.name] = tf_var
             if not ('Bias' in tf_var.name):
@@ -292,7 +292,7 @@ class PointerNetwork(object):
         specials_file = CKPT_DIR + "/" + model_str + "/specials"
         saver = tf.train.Saver()
         config = tf.ConfigProto(allow_soft_placement=True)
-        test_losses = []
+        test_acc = []
         n_accs = []
         d_accs = []
         all_fnames = []
@@ -337,7 +337,6 @@ class PointerNetwork(object):
 
                 test_loss_value, summary = sess.run([test_loss, merged], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
                 test_writer.add_summary(summary, i)
-                test_losses.append(test_loss_value)
                 if i % 1 == 0:
                     print("Test: ", test_loss_value)
 
@@ -349,29 +348,26 @@ class PointerNetwork(object):
 
                 input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
                 input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
-                if i > 0 and min(test_losses) >= test_loss_value and (not FLAGS.test_mode):
-                    print("We are saving the chekpoints") 
-                    saver.save(sess, ckpt_file)
-                    special_saver.save(sess, specials_file)
                 if FLAGS.test_mode:
                     all_fnames.extend(fnames)
                     for correct, pred in zip(input_order, predictions_order):
                         correct, pred = np.array(correct), np.array(pred)
                         n_accs.append(NeighborAccuracy(correct, pred, (FLAGS.puzzle_height, FLAGS.puzzle_width)))
                         d_accs.append(directAccuracy(correct, pred))
-                if i > 0 and  i % 20  == 0 :
-                    total_neighbor_acc = 0.0
-                    total_direct_acc = 0.0
-                    num_iss = 0.0
-                    for correct, pred in zip(input_order, predictions_order):
-                        correct, pred = np.array(correct), np.array(pred)
-                        num_iss += 1.0 if len(np.unique(pred) != FLAGS.max_steps) else 0
-                        print("Number of unique things ", np.unique(pred), pred) 
-                        total_neighbor_acc += NeighborAccuracy(correct, pred, (FLAGS.puzzle_height, FLAGS.puzzle_width))
-                        total_direct_acc  += directAccuracy(correct, pred)
-                    print("Avg neighbor acc = ", total_neighbor_acc/len(input_order), "Avg direct Accuracy = ", total_direct_acc/len(input_order),"fraction :", num_iss/len(input_order))
-                    epoch_data.append([train_loss_value, test_loss_value,total_neighbor_acc/len(input_order), total_direct_acc/len(input_order)])
-                    np.save(CKPT_DIR + "/" + model_str + '/epoch_data_' + model_str, epoch_data)
+                total_neighbor_acc = 0.0
+                total_direct_acc = 0.0
+                for correct, pred in zip(input_order, predictions_order):
+                    correct, pred = np.array(correct), np.array(pred)
+                    total_neighbor_acc += NeighborAccuracy(correct, pred, (FLAGS.puzzle_height, FLAGS.puzzle_width))
+                    total_direct_acc  += directAccuracy(correct, pred)
+                print("Avg neighbor acc = ", total_neighbor_acc/len(input_order), "Avg direct Accuracy = ", total_direct_acc/len(input_order))
+                epoch_data.append([train_loss_value, test_loss_value,total_neighbor_acc/len(input_order), total_direct_acc/len(input_order)])
+                np.save(CKPT_DIR + "/" + model_str + '/epoch_data_' + model_str, epoch_data)
+                test_acc.append(total_direct_acc)
+                if i > 0 and max(test_acc) <= total_direct_acc and (not FLAGS.test_mode):
+                    print("We are saving the checkpoints")
+                    saver.save(sess, ckpt_file)
+                    special_saver.save(sess, specials_file)
                     # print(encoder_input_data, decoder_input_data, targets_data)
                     # print(inps_)
         print("neighbor acc :", np.mean(n_accs), "direct acc: ", np.mean(d_accs))

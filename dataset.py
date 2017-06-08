@@ -18,7 +18,7 @@ class DataGenerator(object):
         self.test_mode = test_mode
         self.data['train'] = (self.data['train'][0], np.argmax( self.data['train'][1] , axis = 2), self.data['train'][2])
         self.data['val'] = (self.data['val'][0], np.argmax(self.data['val'][1] , axis=2), self.data['val'][2])
-        self.data['test'] = (self.data['test'][0], np.argmax(self.data['test'][1] , axis=2), self.data['test'][2], self.data['test'][3], self.data['test'][3])
+        self.data['test'] = (self.data['test'][0], np.argmax(self.data['test'][1] , axis=2), self.data['test'][2], self.data['test'][3], self.data['test'][4])
         self.input_dim = input_dim
         self.curr_train_pos = 0
         self.curr_test_pos = 0

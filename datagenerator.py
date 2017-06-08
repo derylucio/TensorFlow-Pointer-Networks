@@ -13,7 +13,7 @@ import fitness_vectorized as fv
 
 
 NUM_TEST = 512
-NUM_TRAIN = 5120 #10240
+NUM_TRAIN = 6400
 NUM_VAL = 1024
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(64, 64, 3)

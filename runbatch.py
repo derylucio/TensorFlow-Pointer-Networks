@@ -7,14 +7,14 @@ with open('runbatch', 'r') as myfile:
 
 load_from_ckpts = "False" # "False"
 cell_type = "GRU"
-one_hot = "True"
-lrs = [1e-4]    
-rnns  = [800]  
-fc_dims = [256, 512] 
+one_hot = "False"
+lrs = [3e-5]    
+rnns  = [1000]  
+fc_dims = [256] 
 regs = [0.001] 
 fnumber = 0
 dps = [-1]      
-puzzle_height = 2
+puzzle_height = 4
 puzzle_width = 2
 max_steps = puzzle_height * puzzle_width
 
