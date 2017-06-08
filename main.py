@@ -1,4 +1,4 @@
-"""Implementation of Pointer networks: http://arxiv.org/pdf/1506.03134v1.pdf.
+"""Implementation of Pointer networks: http://arxiv.org/pdf/1506.03134v1.pdf. [L]
 """
 
 from __future__ import absolute_import, division, print_function
@@ -252,7 +252,7 @@ class PointerNetwork(object):
             return tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate)
 
 
-    def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, model_str, load_frm_ckpts, tune_vgg=False):
+    def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, resnet_cnn, model_str, load_frm_ckpts, tune_vgg=False):
 
         loss = 0.0
         for output, target, weight in zip(self.outputs, self.decoder_targets, self.target_weights):
@@ -263,9 +263,12 @@ class PointerNetwork(object):
         special = {} 
         for tf_var in tf.trainable_variables():
             if("fc_vgg" in tf_var.name): special[tf_var.name] = tf_var
+            if ('resnet_v1_50/logits' in tf_var.name): special[tf_var.name] = tf_var
             if not ('Bias' in tf_var.name):
-                if use_cnn and ( not ('vgg_16' in tf_var.name) or tune_vgg):
+                if use_cnn and ( not ('vgg_16' in tf_var.name) or tune_vgg) and (not resnet_cnn or not('resnet_v1_50' in tf_var.name)):
+                
                     if 'vgg_16' in tf_var.name : print('Added vgg weights for training')
+                    if 'resnet_v1_50' in tf_var.name: print ('Adding resnet weight')
                     var_list.append(tf_var)
                     reg_loss += tf.nn.l2_loss(tf_var)
                 else:
@@ -273,7 +276,7 @@ class PointerNetwork(object):
                     reg_loss += tf.nn.l2_loss(tf_var)
         
         loss += reg * reg_loss if FLAGS.dp < 0.0 else 0.0
-        tf.summary.scalar('train_loss', loss) # Sanya
+        tf.summary.scalar('train_loss', loss) 
 
         test_loss = 0.0
         for output, target, weight in zip(self.predictions, self.decoder_targets, self.target_weights):
@@ -402,4 +405,4 @@ if __name__ == "__main__":
                                         FLAGS.lr_decay, FLAGS.inter_dim, \
                                         FLAGS.fc_dim, FLAGS.use_cnn, FLAGS.resnet_cnn, FLAGS.image_dim, FLAGS.vgg_dim, FLAGS.bidirect)
         dataset = DataGenerator(FLAGS.puzzle_height, FLAGS.puzzle_width, FLAGS.input_dim, FLAGS.use_cnn, FLAGS.image_dim)
-        pointer_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn, model_str,FLAGS.load_from_ckpts, tune_vgg=FLAGS.tune_vgg)
+        pointer_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn, FLAGS.resnet_cnn, model_str,FLAGS.load_from_ckpts, tune_vgg=FLAGS.tune_vgg)
