@@ -320,7 +320,7 @@ class PointerNetwork(object):
                     feed_dict = self.create_feed_dict(encoder_input_data, decoder_input_data, targets_data, FLAGS.dp)
                     d_x, d_reg, l, summary = sess.run([loss, reg_loss, train_op, merged], feed_dict=feed_dict)
                     train_loss_value = d_x #0.9 * train_loss_value + 0.1 * d_x
-                    train_writer.add_summary(summary, i)
+                    #train_writer.add_summary(summary, i)
 
                     if i % 1 == 0:
                         print('Step: %d' % i)
@@ -336,7 +336,7 @@ class PointerNetwork(object):
                 predictions = sess.run(self.predictions, feed_dict=feed_dict)
 
                 test_loss_value, summary = sess.run([test_loss, merged], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
-                test_writer.add_summary(summary, i)
+                #test_writer.add_summary(summary, i)
                 if i % 1 == 0:
                     print("Test: ", test_loss_value)
 
