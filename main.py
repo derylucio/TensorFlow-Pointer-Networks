@@ -384,6 +384,47 @@ def getModelStr():
     if FLAGS.encoder_attn_1hot: model_str += '_used-attn-one-hot'
     return model_str
 
+def compute_saliency_maps(X, y, model):
+    """
+    Compute a class saliency map using the model for images X and labels y.
+
+    Input:
+    - X: Input images, numpy array of shape (N, H, W, 3)
+    - y: Labels for X, numpy of shape (N,)
+    - model: A model that will be used to compute the saliency map.
+
+    Returns:
+    - saliency: A numpy array of shape (N, H, W) giving the saliency maps for the
+    input images.
+    """
+    correct_scores = tf.gather_nd(model.classifier,
+                                  tf.stack((tf.range(X.shape[0]), model.labels), axis=1))
+    grads = tf.gradients(correct_scores, model.image)
+    gradient = sess.run(grads, feed_dict={model.image:X, model.labels:y})
+    gradient = np.abs(gradient)
+    saliency = np.max(gradient, axis=-1).reshape(gradient[0].shape[:-1])
+    return saliency
+
+def show_saliency_maps(X, y, mask):
+    mask = np.asarray(mask)
+    Xm = X[mask]
+    ym = y[mask]
+
+    saliency = compute_saliency_maps(Xm, ym, model)
+
+    for i in range(mask.size):
+        plt.subplot(2, mask.size, i + 1)
+        plt.imshow(deprocess_image(Xm[i]))
+        plt.axis('off')
+        plt.title(class_names[ym[i]])
+        plt.subplot(2, mask.size, mask.size + i + 1)
+        plt.title(mask[i])
+        plt.imshow(saliency[i], cmap=plt.cm.hot)
+        plt.axis('off')
+        plt.gcf().set_size_inches(10, 4)
+    plt.show()
+
+
 if __name__ == "__main__":
     # TODO: replace other with params
     model_str = getModelStr()
