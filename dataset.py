@@ -16,6 +16,7 @@ class DataGenerator(object):
         self.image_dim = image_dim
         self.unsup = unsup
         self.data = getData(puzzle_height, puzzle_width, use_cnn=self.use_cnn, jiggle=(not unsup), image_dim=image_dim)
+        #np.save("data_labels", self.data['train'][2])
         self.data['train'] = (self.data['train'][0], np.argmax( self.data['train'][1] , axis = 2), self.data['train'][2])
         self.data['val'] = (self.data['val'][0], np.argmax(self.data['val'][1] , axis=2), self.data['val'][2])
         self.input_dim = input_dim
