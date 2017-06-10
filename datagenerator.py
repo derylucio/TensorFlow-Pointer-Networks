@@ -27,10 +27,10 @@ _R_MEAN = 123.68
 _G_MEAN = 116.78
 _B_MEAN = 103.94
 
-POOL_SIZE = 16		
+POOL_SIZE = 8
 
 categories = sorted([os.path.basename(cat) for cat in glob.glob(TRAIN_DIR + "/*")])
-NUM_CATS = len(categories)
+NUM_CATS = 32 #len(categories)
 print("NUMBER OF CATEGORIES ", NUM_CATS)
 # For now, assert that this is evenly divisible. 
 #assert NUM_TEST % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_TRAIN)
@@ -146,7 +146,7 @@ def loadImages(directory, N, H, W, dims=(32,32,3)):
 		#print(num_per_cat)
 		# Seems more efficient to iterate over category dirs and get exact number
 		# of imgs per category. Hence, not using glob to load all imgs to disk.  
-		for dirname in sorted(os.listdir(directory)):
+		for dirname in sorted(os.listdir(directory))[:NUM_CATS]:
 			path = os.path.join(directory, dirname)
 			filenames = [os.path.join(path, fname) for fname in sorted(os.listdir(path))]
 

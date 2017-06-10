@@ -57,7 +57,8 @@ class DataGenerator(object):
             self.curr_test_pos += 1
             if batch_size*self.curr_test_pos >= len(x): self.curr_test_pos = 0
         pos = self.curr_train_pos if train_mode else self.curr_test_pos
-        x, y = x[pos*batch_size:(pos  + 1)*batch_size], y[pos*batch_size:(pos  + 1)*batch_size]
+       	x, y = x[pos*batch_size:(pos  + 1)*batch_size], y[pos*batch_size:(pos  + 1)*batch_size]
+        print("Unqiue classes : ", np.unique(np.argmax(y, axis=1)))
         if not self.unsup:
             split_images = np.reshape(x, (-1, self.image_dim + JIGGLE_ROOM, self.image_dim + JIGGLE_ROOM, 3))
             x = []

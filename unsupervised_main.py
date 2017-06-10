@@ -36,12 +36,13 @@ flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPE
 flags.DEFINE_integer('nb_epochs', 1000, 'the number of epochs to run')
 flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HYPER-PARAMS
 flags.DEFINE_integer('lr_decay_period', 100, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
-flags.DEFINE_float('reg', 0.1, 'regularization on model parameters') # HYPER-PARAMS
+flags.DEFINE_float('reg', 1, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
 flags.DEFINE_bool("use_jigsaws", True, "whether to use jigsaws for training")
 flags.DEFINE_string("model_path", "model_ckpts/CNN_max_steps4_rnn_size-800_learning_rate-0.0001_fc_dim-1024_num-glimpses-0_reg-0.001_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_used-attn-one-hot/specials", "the path to the checkpointed model") #HYPER-PARAMS
 flags.DEFINE_integer("train_data", 2560, "amount of data to train on")
+flags.DEFINE_integer('num_classes', 256, 'number of classes to predict')
 
 class ClassifierNetwork(object):
     def __init__(self, max_len, batch_size, learning_rate, learning_rate_decay_factor, fc_dim, image_dim, vgg_dim, num_classes = 256, use_jigsaws=False):
@@ -221,7 +222,7 @@ class ClassifierNetwork(object):
             #np.save("jigsaw_features", jigsaw_feats)
 
 def getModelStr():
-    model_str = "Unsup-JIGSAW_" if FLAGS.use_jigsaws else "Temp-Unsup-INIT_"
+    model_str = "Temp-Unsup-JIGSAW_" if FLAGS.use_jigsaws else "Temp-Unsup-INIT_"
     model_str += "learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) 
     model_str += "_reg-" + str(FLAGS.reg) 
     model_str += "_optimizer-" + FLAGS.optimizer + "_train-data-" + str(FLAGS.train_data)
@@ -242,6 +243,6 @@ if __name__ == "__main__":
     np.random.seed(RAND_SEED)
     with tf.device('/gpu:0'):
         classifier_network = ClassifierNetwork(FLAGS.max_steps, FLAGS.batch_size, FLAGS.learning_rate, \
-                                        FLAGS.lr_decay, FLAGS.fc_dim, FLAGS.image_dim, FLAGS.vgg_dim, num_classes = 256, use_jigsaws=FLAGS.use_jigsaws)
+                                        FLAGS.lr_decay, FLAGS.fc_dim, FLAGS.image_dim, FLAGS.vgg_dim, num_classes = FLAGS.num_classes, use_jigsaws=FLAGS.use_jigsaws)
         dataset = DataGenerator(FLAGS.puzzle_width, FLAGS.puzzle_width, 1000, True, FLAGS.image_dim, unsup=True)
         classifier_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, True, model_str,FLAGS.load_from_ckpts, tune_vgg=FLAGS.tune_vgg, use_jigsaws=FLAGS.use_jigsaws)
