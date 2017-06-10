@@ -30,7 +30,7 @@ _B_MEAN = 103.94
 POOL_SIZE = 8
 
 categories = sorted([os.path.basename(cat) for cat in glob.glob(TRAIN_DIR + "/*")])
-NUM_CATS = 32 #len(categories)
+NUM_CATS = 64 #len(categories)
 print("NUMBER OF CATEGORIES ", NUM_CATS)
 # For now, assert that this is evenly divisible. 
 #assert NUM_TEST % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_TRAIN)
@@ -91,6 +91,7 @@ def shuffleAndReshapeData(args, keep_shape=True):
 	cats_onehot_shuff = np.zeros((len(fnames), NUM_CATS))
 	for ind, category in enumerate(unique):
 		locs = np.where(cats == category)
+		print(locs)
 		cats_onehot_shuff[locs, ind] = 1.0
 		
 	N, L, W, H, C = X.shape 		# TODO: Check the updated shape. 

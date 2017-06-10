@@ -30,17 +30,17 @@ flags.DEFINE_integer('puzzle_width', 2, 'Puzzle Width')
 flags.DEFINE_integer('puzzle_height', 2, 'Puzzle Height')
 flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
 flags.DEFINE_float('learning_rate', 1e-5, 'Learning rate') # Hyper param
-flags.DEFINE_integer('fc_dim', 1024, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
+flags.DEFINE_integer('fc_dim', 256, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
 flags.DEFINE_integer('vgg_dim', 2048, 'Dimensionality flattnened vgg pool feature') 
 flags.DEFINE_string('optimizer', 'Adam', 'Optimizer to use for training') # HYPER-PARAMS
 flags.DEFINE_integer('nb_epochs', 1000, 'the number of epochs to run')
 flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HYPER-PARAMS
 flags.DEFINE_integer('lr_decay_period', 100, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
-flags.DEFINE_float('reg', 1, 'regularization on model parameters') # HYPER-PARAMS
+flags.DEFINE_float('reg', 1.0, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
 flags.DEFINE_bool("use_jigsaws", True, "whether to use jigsaws for training")
-flags.DEFINE_string("model_path", "model_ckpts/CNN_max_steps4_rnn_size-800_learning_rate-0.0001_fc_dim-1024_num-glimpses-0_reg-0.001_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_used-attn-one-hot/specials", "the path to the checkpointed model") #HYPER-PARAMS
+flags.DEFINE_string("model_path","model_ckpts/CNN_max_steps4_rnn_size-1000_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.001_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_used-attn-one-hot/specials", "the path to the checkpointed model") #HYPER-PARAMS
 flags.DEFINE_integer("train_data", 2560, "amount of data to train on")
 flags.DEFINE_integer('num_classes', 256, 'number of classes to predict')
 
@@ -182,7 +182,7 @@ class ClassifierNetwork(object):
                     FLAGS.batch_size, FLAGS.max_steps)
 
                 # Train
-                feed_dict = self.create_feed_dict(input_data, targets_data, 0.5)
+                feed_dict = self.create_feed_dict(input_data, targets_data, 1.0)# 0.5)
                 d_x, d_reg, l, train_pred  = sess.run([loss, reg_loss, train_op, self.outputs], feed_dict=feed_dict)
                 #vgg_feat  = sess.run([self.vgg_feat], feed_dict=feed_dict)
                 #vgg_feats.extend(vgg_feat)
