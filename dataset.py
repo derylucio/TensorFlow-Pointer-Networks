@@ -86,7 +86,6 @@ class DataGenerator(object):
 
             # Points to the stop symbol
             writer_outputs_batch[N][b, 0] = 1.0
-        print("Filenames,", reader_fnames_batch)
         return reader_input_batch, decoder_input_batch, writer_outputs_batch, reader_fnames_batch
     
 #datagen = DataGenerator(2, 2, 12288, False, 64)

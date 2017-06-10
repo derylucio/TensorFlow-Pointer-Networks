@@ -22,6 +22,10 @@ import scipy.ndimage
 sys.path.append("utils/")
 from evaluation import NeighborAccuracy, directAccuracy  
 import fitness_vectorized as fv
+import datagenerator as dg
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 RAND_SEED = 1234
 FC_DIM_RESNET = 1000 
@@ -191,7 +195,7 @@ class PointerNetwork(object):
                     o_fw_c, o_fw_m  = tf.unstack(fw, axis=0)
                     o_bw_c, o_bw_m  = tf.unstack(bw, axis=0)
                     o_c =  tf.concat([o_fw_c, o_bw_c], axis=1)
-                    o_m =  tf.concat([o_fw_m, o_bw_m], axis=1)  
+                    o_m =  tf.concat([o_fw_m, o_bw_m], axis=1)   
                     final_state.append(tf.contrib.rnn.LSTMStateTuple(o_c, o_m))
                 if num_layers == 1: final_state = final_state[0]
             elif num_layers <= 1:
@@ -284,7 +288,8 @@ class PointerNetwork(object):
         
         loss += reg * reg_loss if FLAGS.dp < 0.0 else 0.0
         tf.summary.scalar('train_loss', loss) # Sanya
-
+        
+        test_loss = 0.0
         for output, target, weight, fname in zip(self.predictions, self.decoder_targets, self.target_weights, self.fnames):
             test_loss += tf.nn.softmax_cross_entropy_with_logits(logits=output, labels=target) * weight
 
@@ -347,39 +352,44 @@ class PointerNetwork(object):
                     encoder_input_data, decoder_input_data, targets_data, 1.0)
                 # inps_ = sess.run(self.inps, feed_dict=feed_dict)
 
-                predictions = sess.run(self.predictions, feed_dict=feed_dict)   
+                predictions, targets = sess.run([self.predictions, self.decoder_targets], feed_dict=feed_dict)   
 
                 # SALIENCY START
-                fname = self.fnames[0]
-                grads = []
-                test_loss = 0.0
-                print("Preds len:", len(self.predictions))
+                print("Saliency in Test")
+                fname = self.fnames[0] # Only use first file. 
+                print("Filename:,", fname)
+                target_idx = np.argmax(targets, axis=0)
                 is_cached = False
                 img_cache = []
+                grads = []
+                for i, idx in enumerate(target_idx[0]):
+                    if idx == 0: continue
+                    if not is_cached:
+                        is_cached = True
+                        img = dg.readImg(fname)
+                        args = ([img], FLAGS.puzzle_height, FLAGS.puzzle_width, (FLAGS.image_dim, FLAGS.image_dim, 3))
+                        img = dg.getReshapedImages(args)[0]
 
-                if not is_cached:
-                    is_cached = True
-                    img = scipy.ndimage.imread(fname)
-                    img_cache = np.array(fv.splitImage(FLAGS.puzzle_height, FLAGS.puzzle_width, \
-                                                        img, (FLAGS.image_dim, FLAGS.image_dim, 3)))
-                img_chip = img_cache[target]
-                print("Image Chip", img_chip.shape)
-                
-                grad = tf.gradients(test_loss, img_chip) #TODO: Find a way of keep
-                print("Output Sum Shape,", np.sum(output).shape)
-                print("Grad Shape,", grad[0])
-                grads.append(grad)
-                print("Output", output, target)
-                print("Saliency in Test")
+                        args = (FLAGS.puzzle_height, FLAGS.puzzle_width, img, (FLAGS.image_dim, FLAGS.image_dim, 3))
+                        img_cache = np.array(fv.splitImage(*args))
+                    
+                    idx = idx - 1
+                    img_chip = img_cache[idx]
+                    # Just a test below.
+                    #print(self.encoder_inputs[idx].shape)
+                    grad = tf.gradients(np.sum(self.outputs[idx], axis=-1), self.encoder_inputs[idx]) 
+                    # TODO: Find way to add img_chip instead of encoder input
+                    grads.append(grad)
 
-                test_loss_value, summary, indices, grads = sess.run([test_loss, merged, self.cps, grads], feed_dict=feed_dict)
-                grads = np.abs(grads)
-                print(grads)
-                saliency = np.max(grads, axis=-1).reshape(gradient[0].shape[:-1])
-                print("Target", targets_data)
-                save_saliency(saliency, self.fnames[0], targets_data[0])
+                test_loss_value, summary, indices, grad_arr = sess.run([test_loss, merged, self.cps, grads], feed_dict=feed_dict)
+                saliencies = []
+                for i in np.arange(len(grads)):
+                    print(len(grad_arr))
+                    grad_arr[i] = np.abs(grad_arr[i])
+                    saliencies.append(np.max(grad_arr[i], axis=-1).reshape(grad_arr[i][0].shape[:-1]))
+                save_saliency(saliencies, self.fnames[0])
                 
-                # SALIENCY
+                # SALIENCY END
  
                 test_writer.add_summary(summary, i)
                 test_losses.append(test_loss_value)
@@ -445,21 +455,31 @@ def compute_saliency_maps(X, y, model):
     saliency = np.max(gradient, axis=-1).reshape(gradient[0].shape[:-1])
     return saliency
 
-def save_saliency(saliency):
+def save_saliency(saliencies, fname):
+    # Hacky. 
+    img = dg.readImg(fname)
+    args = ([img], FLAGS.puzzle_height, FLAGS.puzzle_width, (FLAGS.image_dim, FLAGS.image_dim, 3))
+    img = dg.getReshapedImages(args)[0]
+
+    args = (FLAGS.puzzle_height, FLAGS.puzzle_width, img, (FLAGS.image_dim, FLAGS.image_dim, 3))
+    img_cache = np.array(fv.splitImage(*args))
+
     mask = np.array([0])
-    Xm = np.random.randn(64, 64, 3)
     ym = [0]
-    for i in range(mask.size):
-        plt.subplot(2, mask.size, i + 1)
-        plt.imshow(deprocess_image(Xm[i]))
+    seqlen = len(saliencies)
+    print(seqlen)
+    for i in range(seqlen):
+        plt.subplot(2, seqlen, i + 1)
+        #plt.imshow(deprocess_image(Xm[i]))
         plt.axis('off')
-        plt.title(class_names[ym[i]])
-        plt.subplot(2, mask.size, mask.size + i + 1)
+        #plt.title(class_names[ym[i]])
+        plt.subplot(2, seqlen, mask.size + i + 1)
         plt.title(mask[i])
-        plt.imshow(saliency[i], cmap=plt.cm.hot)
+        print(saliencies[i].shape)
+        plt.imshow(saliencies[0][i], cmap=plt.cm.hot)
         plt.axis('off')
         plt.gcf().set_size_inches(10, 4)
-    plot.show()
+    plt.savefig(i + ".png")
 
 def show_saliency_maps(X, y, mask):
     mask = np.asarray(mask)
@@ -478,7 +498,7 @@ def show_saliency_maps(X, y, mask):
         plt.imshow(saliency[i], cmap=plt.cm.hot)
         plt.axis('off')
         plt.gcf().set_size_inches(10, 4)
-    plt.show()
+    plt.savefig(i + ".png")
 
 
 if __name__ == "__main__":
