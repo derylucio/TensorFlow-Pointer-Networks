@@ -18,8 +18,11 @@ import random
 import numpy as np
 import os
 import sys 
+import scipy.ndimage
 sys.path.append("utils/")
 from evaluation import NeighborAccuracy, directAccuracy  
+import fitness_vectorized as fv
+
 RAND_SEED = 1234
 FC_DIM_RESNET = 1000 
 CKPT_DIR = "model_ckpts"
@@ -99,6 +102,7 @@ class PointerNetwork(object):
         self.decoder_inputs = []
         self.decoder_targets = []
         self.target_weights = []
+        self.fnames = []
         for i in range(max_len):
             i_size = [batch_size, input_size] if not use_cnn else [batch_size, image_dim, image_dim, 3]
             self.encoder_inputs.append(tf.placeholder(
@@ -112,6 +116,9 @@ class PointerNetwork(object):
                 tf.float32, [batch_size, max_len + 1], name="DecoderTarget%d" % i))  # one hot
             self.target_weights.append(tf.placeholder(
                 tf.float32, [batch_size, 1], name="TargetWeight%d" % i))
+        
+        #for i in range(batch_size):
+        #    self.fnames.append(tf.placeholder(tf.string, name="ImageFilename%d" % i))
 
         # Encoder
         trainable_init_state = tf.Variable(tf.zeros(i_size), "trainable_init_state")
@@ -237,6 +244,9 @@ class PointerNetwork(object):
         for placeholder in self.target_weights:
             feed_dict[placeholder] = np.ones([self.batch_size, 1])
 
+        #for placeholder, data in zip(self.fnames, fnames_data):
+        #    feed_dict[placeholder] = data
+
         feed_dict[self.keep_prob] = keep_prob
         return feed_dict
 
@@ -275,8 +285,7 @@ class PointerNetwork(object):
         loss += reg * reg_loss if FLAGS.dp < 0.0 else 0.0
         tf.summary.scalar('train_loss', loss) # Sanya
 
-        test_loss = 0.0
-        for output, target, weight in zip(self.predictions, self.decoder_targets, self.target_weights):
+        for output, target, weight, fname in zip(self.predictions, self.decoder_targets, self.target_weights, self.fnames):
             test_loss += tf.nn.softmax_cross_entropy_with_logits(logits=output, labels=target) * weight
 
         test_loss = tf.reduce_mean(test_loss) / (FLAGS.max_steps  + 1)
@@ -317,7 +326,7 @@ class PointerNetwork(object):
                 if i > 0 and (i % lr_decay_period == 0):
                     sess.run([self.learning_rate_decay_op])
 
-                encoder_input_data, decoder_input_data, targets_data = dataset.next_batch(
+                encoder_input_data, decoder_input_data, targets_data, self.fnames = dataset.next_batch(
                     FLAGS.batch_size, FLAGS.max_steps)
 
                 # Train
@@ -331,16 +340,47 @@ class PointerNetwork(object):
                     print('Step: %d' % i)
                     print("Train: ", train_loss_value - reg *d_reg, " reg:",  reg *d_reg)
 
-                encoder_input_data, decoder_input_data, targets_data = dataset.next_batch(
+                encoder_input_data, decoder_input_data, targets_data, self.fnames = dataset.next_batch(
                     FLAGS.batch_size, FLAGS.max_steps, train_mode=False)
                 # Test
                 feed_dict = self.create_feed_dict(
                     encoder_input_data, decoder_input_data, targets_data, 1.0)
                 # inps_ = sess.run(self.inps, feed_dict=feed_dict)
 
-                predictions = sess.run(self.predictions, feed_dict=feed_dict)
+                predictions = sess.run(self.predictions, feed_dict=feed_dict)   
 
-                test_loss_value, summary, indices = sess.run([test_loss, merged, self.cps], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
+                # SALIENCY START
+                fname = self.fnames[0]
+                grads = []
+                test_loss = 0.0
+                print("Preds len:", len(self.predictions))
+                is_cached = False
+                img_cache = []
+
+                if not is_cached:
+                    is_cached = True
+                    img = scipy.ndimage.imread(fname)
+                    img_cache = np.array(fv.splitImage(FLAGS.puzzle_height, FLAGS.puzzle_width, \
+                                                        img, (FLAGS.image_dim, FLAGS.image_dim, 3)))
+                img_chip = img_cache[target]
+                print("Image Chip", img_chip.shape)
+                
+                grad = tf.gradients(test_loss, img_chip) #TODO: Find a way of keep
+                print("Output Sum Shape,", np.sum(output).shape)
+                print("Grad Shape,", grad[0])
+                grads.append(grad)
+                print("Output", output, target)
+                print("Saliency in Test")
+
+                test_loss_value, summary, indices, grads = sess.run([test_loss, merged, self.cps, grads], feed_dict=feed_dict)
+                grads = np.abs(grads)
+                print(grads)
+                saliency = np.max(grads, axis=-1).reshape(gradient[0].shape[:-1])
+                print("Target", targets_data)
+                save_saliency(saliency, self.fnames[0], targets_data[0])
+                
+                # SALIENCY
+ 
                 test_writer.add_summary(summary, i)
                 test_losses.append(test_loss_value)
                 if i % 1 == 0:
@@ -404,6 +444,22 @@ def compute_saliency_maps(X, y, model):
     gradient = np.abs(gradient)
     saliency = np.max(gradient, axis=-1).reshape(gradient[0].shape[:-1])
     return saliency
+
+def save_saliency(saliency):
+    mask = np.array([0])
+    Xm = np.random.randn(64, 64, 3)
+    ym = [0]
+    for i in range(mask.size):
+        plt.subplot(2, mask.size, i + 1)
+        plt.imshow(deprocess_image(Xm[i]))
+        plt.axis('off')
+        plt.title(class_names[ym[i]])
+        plt.subplot(2, mask.size, mask.size + i + 1)
+        plt.title(mask[i])
+        plt.imshow(saliency[i], cmap=plt.cm.hot)
+        plt.axis('off')
+        plt.gcf().set_size_inches(10, 4)
+    plot.show()
 
 def show_saliency_maps(X, y, mask):
     mask = np.asarray(mask)
