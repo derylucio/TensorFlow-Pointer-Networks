@@ -3,7 +3,7 @@ from __future__ import absolute_import, division, print_function
 import numpy as np
 import sys
 
-from datagenerator import getData
+from datagenerator_temp import getData
 sys.path.append('utils/')
 from fitness_vectorized import JIGGLE_ROOM
 

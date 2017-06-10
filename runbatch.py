@@ -14,8 +14,8 @@ fc_dims = [256]
 regs = [0.001] 
 fnumber = 0
 dps = [-1]      
-puzzle_height = 4
-puzzle_width = 2
+puzzle_height = 2
+puzzle_width = 3
 max_steps = puzzle_height * puzzle_width
 
 for lr in lrs:
