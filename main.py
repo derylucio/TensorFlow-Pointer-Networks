@@ -1,4 +1,5 @@
 """Implementation of Pointer networks: http://arxiv.org/pdf/1506.03134v1.pdf.
+    Old 
 """
 
 from __future__ import absolute_import, division, print_function
@@ -26,12 +27,12 @@ CKPT_DIR = "model_ckpts"
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_integer('batch_size', 32, 'Batch size')
+flags.DEFINE_integer('batch_size', 32, 'Batch size') #8
 flags.DEFINE_integer('max_steps', 4, 'Maximum number of pieces in puzzle')
 flags.DEFINE_integer('rnn_size', 400, 'RNN size.  ') # HYPER-PARAMS
-flags.DEFINE_integer('puzzle_width', 2, 'Puzzle Width')
-flags.DEFINE_integer('puzzle_height', 2, 'Puzzle Height')
-flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image')
+flags.DEFINE_integer('puzzle_width', 2, 'Puzzle Width') 
+flags.DEFINE_integer('puzzle_height', 2, 'Puzzle Height')  
+flags.DEFINE_integer('image_dim', 64, 'If use_cnn is set to true, we use this as the dimensions of each piece image') #CHANGED
 flags.DEFINE_float('learning_rate', 1e-4, 'Learning rate') # Hyper param
 flags.DEFINE_integer('inter_dim', 4096, 'Dimension of intermediate state - if using fully connected' ) # HYPER-PARAMS
 flags.DEFINE_integer('fc_dim', 256, 'Dimension of final pre-encoder state - if using fully connected') # HYPER-PARAMS
@@ -130,7 +131,6 @@ class PointerNetwork(object):
             stacked_ins = tf.stack(all_inps)
             stacked_ins = tf.reshape(stacked_ins, [-1, image_dim, image_dim, 3])
             if resnet_cnn:
-                fc_dim = FC_DIM_RESNET
                 inputfn, features = cnn_f_extractor.getCNNFeatures(stacked_ins, fc_dim, self.init)
             else: 
                 inputfn, features = cnn_f_extractor.getCNNFeatures(stacked_ins, vgg_dim, fc_dim, self.init)
@@ -252,7 +252,7 @@ class PointerNetwork(object):
             return tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate)
 
 
-    def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, model_str, load_frm_ckpts, tune_vgg=False):
+    def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, resnet_cnn, model_str, load_frm_ckpts, tune_vgg=False):
 
         loss = 0.0
         for output, target, weight in zip(self.outputs, self.decoder_targets, self.target_weights):
@@ -261,11 +261,16 @@ class PointerNetwork(object):
         reg_loss = 0
         var_list = []
         special = {} 
+
         for tf_var in tf.trainable_variables():
             if("fc_vgg" in tf_var.name): special[tf_var.name] = tf_var
+            if ('resnet_v1_50/logits' in tf_var.name):
+                special[tf_var.name] = tf_var
+
             if not ('Bias' in tf_var.name):
-                if use_cnn and ( not ('vgg_16' in tf_var.name) or tune_vgg):
+                if use_cnn and ( not ('vgg_16' in tf_var.name) or tune_vgg) and (not resnet_cnn or not('resnet_v1_50' in tf_var.name)):
                     if 'vgg_16' in tf_var.name : print('Added vgg weights for training')
+                    if 'resnet_v1_50' in tf_var.name: print ('Adding resnet weight')
                     var_list.append(tf_var)
                     reg_loss += tf.nn.l2_loss(tf_var)
                 else:
@@ -295,6 +300,7 @@ class PointerNetwork(object):
         correct_order = 0
         all_order = 0
         epoch_data = []
+        model_str = 'CNN_max_steps4_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.001_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_tuneVGG_used-attn-one-hot'
         ckpt_file = CKPT_DIR + "/" + model_str + "/" + model_str
         specials_file = CKPT_DIR + "/" + model_str + "/specials"
         saver = tf.train.Saver()
@@ -342,7 +348,6 @@ class PointerNetwork(object):
 
                 test_loss_value, summary, indices = sess.run([test_loss, merged, self.cps], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
                 test_writer.add_summary(summary, i)
-                test_losses.append(test_loss_value)
                 if i % 1 == 0:
                     print("Test: ", test_loss_value)
 
@@ -354,11 +359,11 @@ class PointerNetwork(object):
 
                 input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
                 input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
-                if i > 0 and min(test_losses) >= test_loss_value:
+                if i > 0 and max(test_losses) <= test_loss_value:
                     print("We are saving the chekpoints") 
                     saver.save(sess, ckpt_file)
                     special_saver.save(sess, specials_file)
-                if i > 0 and  i % 20  == 0 :
+                if True:
                     total_neighbor_acc = 0.0
                     total_direct_acc = 0.0
                     num_iss = 0.0
@@ -368,6 +373,7 @@ class PointerNetwork(object):
                         print("Number of unique things ", np.unique(pred), pred) 
                         total_neighbor_acc += NeighborAccuracy(correct, pred, (FLAGS.puzzle_height, FLAGS.puzzle_width))
                         total_direct_acc  += directAccuracy(correct, pred)
+                    test_losses.append(total_direct_acc/len(input_order))
                     print("Avg neighbor acc = ", total_neighbor_acc/len(input_order), "Avg direct Accuracy = ", total_direct_acc/len(input_order),"fraction :", num_iss/len(input_order))
                     epoch_data.append([train_loss_value, test_loss_value,total_neighbor_acc/len(input_order), total_direct_acc/len(input_order)])
                     np.save(CKPT_DIR + "/" + model_str + '/epoch_data_' + model_str, epoch_data)
@@ -402,4 +408,4 @@ if __name__ == "__main__":
                                         FLAGS.lr_decay, FLAGS.inter_dim, \
                                         FLAGS.fc_dim, FLAGS.use_cnn, FLAGS.resnet_cnn, FLAGS.image_dim, FLAGS.vgg_dim, FLAGS.bidirect)
         dataset = DataGenerator(FLAGS.puzzle_height, FLAGS.puzzle_width, FLAGS.input_dim, FLAGS.use_cnn, FLAGS.image_dim)
-        pointer_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn, model_str,FLAGS.load_from_ckpts, tune_vgg=FLAGS.tune_vgg)
+        pointer_network.step(FLAGS.optimizer, FLAGS.nb_epochs, FLAGS.lr_decay_period, FLAGS.reg, FLAGS.use_cnn, FLAGS.resnet_cnn, model_str,FLAGS.load_from_ckpts, tune_vgg=FLAGS.tune_vgg)
