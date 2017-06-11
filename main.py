@@ -24,7 +24,7 @@ CKPT_DIR = "model_ckpts"
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
-flags.DEFINE_integer('batch_size', 32, 'Batch size')
+flags.DEFINE_integer('batch_size', 64, 'Batch size')
 flags.DEFINE_integer('max_steps', 9, 'Maximum number of pieces in puzzle')
 flags.DEFINE_integer('rnn_size', 1000, 'RNN size.  ') # HYPER-PARAMS
 flags.DEFINE_integer('puzzle_width', 3, 'Puzzle Width')
@@ -376,7 +376,7 @@ class PointerNetwork(object):
         np.save("fnames" + model_str, all_fnames)
 
 def getModelStr():
-    model_str = "Smaller_CNN_" if FLAGS.use_cnn else "MLP_"
+    model_str = "FIXED_PRES_RANGE_CNN_" if FLAGS.use_cnn else "MLP_"
     model_str += "max_steps" + str(FLAGS.max_steps) + "_rnn_size-" + str(FLAGS.rnn_size) + "_learning_rate-" + str(FLAGS.learning_rate) + "_fc_dim-" + str(FLAGS.fc_dim) + "_num-glimpses-" + str(FLAGS.num_glimpses)
     model_str += "_reg-" + str(FLAGS.reg) if FLAGS.dp < 0.0 else "_dp-" + str(FLAGS.dp)
     model_str += "_optimizer-" + FLAGS.optimizer + "_bidirect-" +  str(FLAGS.bidirect) + "_cell-type-" + FLAGS.cell_type + "_num_layers-" + str(FLAGS.num_layers)
