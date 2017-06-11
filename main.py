@@ -18,8 +18,11 @@ import random
 import numpy as np
 import os
 import sys 
+
 sys.path.append("utils/")
-from evaluation import NeighborAccuracy, directAccuracy  
+from evaluation import NeighborAccuracy, directAccuracy 
+from heatmap_vis import vis_layer
+
 RAND_SEED = 1234
 FC_DIM_RESNET = 1000 
 CKPT_DIR = "model_ckpts"
@@ -44,7 +47,7 @@ flags.DEFINE_integer('lr_decay_period', 100, 'the number of iterations after whi
 flags.DEFINE_float('reg', 0.001, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
 flags.DEFINE_bool('resnet_cnn', False, 'Whether to use resnet model of CNN.') 
-flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
+flags.DEFINE_bool('load_from_ckpts', True, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
 flags.DEFINE_bool('bidirect', True, "Whether to use a bidirectional rnn for encoder")
 flags.DEFINE_string('cell_type', 'GRU', 'The type of RNN cell to use for the pointer network') # HYPER-PARAMS
@@ -133,8 +136,8 @@ class PointerNetwork(object):
                 fc_dim = FC_DIM_RESNET
                 inputfn, features = cnn_f_extractor.getCNNFeatures(stacked_ins, fc_dim, self.init)
             else: 
-                inputfn, features = cnn_f_extractor.getCNNFeatures(stacked_ins, vgg_dim, fc_dim, self.init)
-
+                inputfn, features, first_layer = cnn_f_extractor.getCNNFeatures(stacked_ins, vgg_dim, fc_dim, self.init)
+                self.first_layer = first_layer
             self.print_out = features[0]
             self.inputfn = inputfn
             features = tf.reshape(features, [-1, batch_size, fc_dim])
@@ -298,8 +301,9 @@ class PointerNetwork(object):
         correct_order = 0
         all_order = 0
         epoch_data = []
-        ckpt_file = CKPT_DIR + "/" + model_str + "/" + model_str
-        specials_file = CKPT_DIR + "/" + model_str + "/specials"
+        model_str = 'CNN_max_steps4_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.001_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_tuneVGG_used-attn-one-hot'
+        ckpt_file = CKPT_DIR + "/" + CKPT_DIR + "/" + model_str + "/" + model_str
+        #specials_file = CKPT_DIR + "/" + model_str + "/specials"
         saver = tf.train.Saver()
         config = tf.ConfigProto(allow_soft_placement=True)
         test_losses = []
@@ -316,6 +320,8 @@ class PointerNetwork(object):
             if(load_frm_ckpts): 
                 print("Restoring Ckpts at : ", ckpt_file)
                 saver.restore(sess, ckpt_file)
+
+
             for i in range(nb_epochs):
                 if i > 0 and (i % lr_decay_period == 0):
                     sess.run([self.learning_rate_decay_op])
@@ -326,7 +332,15 @@ class PointerNetwork(object):
                 # Train
                 feed_dict = self.create_feed_dict(
                     encoder_input_data, decoder_input_data, targets_data, FLAGS.dp)
+                
+                print ('----visualization----')
+                fl = sess.run([self.first_layer], feed_dict=feed_dict)
+                print (fl[0])
+                vis_layer(fl[0])
+
                 d_x, d_reg, l, summary = sess.run([loss, reg_loss, train_op, merged], feed_dict=feed_dict)
+
+
                 train_loss_value = d_x #0.9 * train_loss_value + 0.1 * d_x
                 train_writer.add_summary(summary, i)
 
@@ -357,10 +371,10 @@ class PointerNetwork(object):
 
                 input_order = np.concatenate([np.expand_dims(target, 0) for target in targets_data])
                 input_order = np.argmax(input_order, 2).transpose(1, 0)[:, 0:FLAGS.max_steps] - 1
-                if i > 0 and min(test_losses) >= test_loss_value:
-                    print("We are saving the chekpoints") 
-                    saver.save(sess, ckpt_file)
-                    special_saver.save(sess, specials_file)
+                #if i > 0 and min(test_losses) >= test_loss_value:
+                    #print("We are saving the chekpoints") 
+                    #saver.save(sess, ckpt_file)
+                    #special_saver.save(sess, specials_file)
                 if i > 0 and  i % 20  == 0 :
                     total_neighbor_acc = 0.0
                     total_direct_acc = 0.0
@@ -373,7 +387,7 @@ class PointerNetwork(object):
                         total_direct_acc  += directAccuracy(correct, pred)
                     print("Avg neighbor acc = ", total_neighbor_acc/len(input_order), "Avg direct Accuracy = ", total_direct_acc/len(input_order),"fraction :", num_iss/len(input_order))
                     epoch_data.append([train_loss_value, test_loss_value,total_neighbor_acc/len(input_order), total_direct_acc/len(input_order)])
-                    np.save(CKPT_DIR + "/" + model_str + '/epoch_data_' + model_str, epoch_data)
+                    #np.save(CKPT_DIR + "/" + model_str + '/epoch_data_' + model_str, epoch_data)
                     # print(encoder_input_data, decoder_input_data, targets_data)
                     # print(inps_)
 
