@@ -43,7 +43,7 @@ flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HY
 flags.DEFINE_integer('lr_decay_period', 100, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
 flags.DEFINE_float('reg', 0.001, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
-flags.DEFINE_bool('resnet_cnn', False, 'Whether to use resnet model of CNN.') 
+flags.DEFINE_bool('resnet_cnn', True, 'Whether to use resnet model of CNN.') 
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
 flags.DEFINE_bool('bidirect', True, "Whether to use a bidirectional rnn for encoder")
@@ -298,7 +298,7 @@ class PointerNetwork(object):
         correct_order = 0
         all_order = 0
         epoch_data = []
-        model_str = 'CNN_max_steps4_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.001_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_tuneVGG_used-attn-one-hot'
+        #model_str = 'CNN_max_steps4_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.001_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_tuneVGG_used-attn-one-hot'
         ckpt_file = CKPT_DIR + "/" + model_str + "/" + model_str
         specials_file = CKPT_DIR + "/" + model_str + "/specials"
         saver = tf.train.Saver()
