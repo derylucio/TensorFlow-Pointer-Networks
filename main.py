@@ -268,7 +268,7 @@ class PointerNetwork(object):
     def save_saliency(self, saliencies, idx):
         print("Saving saliencies...")
         fname = self.fnames[0]
-        seqlen = len(saliencies)
+        seqlen = FLAGS.max_steps
        
         # Hacky: Reloading images due to issue with encoder_inputs as tf Tensors. 
         img = dg.readImg(fname)
@@ -290,7 +290,8 @@ class PointerNetwork(object):
                     ax[i, t].set_title("Image Chip " + str(t))
                     continue
                 ax[i, t].set_title("Saliency " + "(Time %d, Chip %d)" % (t, i))
-                ax[i, t].imshow(saliencies[t][i-1] / 255.0, cmap=plt.cm.hot)
+                print("Sal shape: ", saliencies[(i - 1)*seqlen + t].shape)
+                ax[i, t].imshow(saliencies[(i - 1)*seqlen +  t] / 255.0, cmap=plt.cm.hot)
                 ax[i, t].axis('off')
             
             plt.gcf().set_size_inches(10, 4)
@@ -403,9 +404,9 @@ class PointerNetwork(object):
                         #print(targ)
                         grad = tf.gradients(targ, inps)
                         #print("Gradient shapes : ", grad)
-                        grad = grad[ind][0]
+                        grad = [grad[j][0] for j in range(FLAGS.max_steps)]
                         print("Gradient shape after : ", grad)
-                        grads.append(grad)
+                        grads.extend(grad)
                     grad_arr = sess.run([grads], feed_dict=feed_dict)
                     print("Lens ", len(grad_arr), " orig: ", len(grads))
                     saliencies = []
