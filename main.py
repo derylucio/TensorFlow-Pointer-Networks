@@ -1,5 +1,4 @@
-"""Implementation of Pointer networks: http://arxiv.org/pdf/1506.03134v1.pdf.
-    Old 
+"""Implementation of Pointer networks: http://arxiv.org/pdf/1506.03134v1.pdf. [L]
 """
 
 from __future__ import absolute_import, division, print_function
@@ -264,9 +263,8 @@ class PointerNetwork(object):
 
         for tf_var in tf.trainable_variables():
             if("fc_vgg" in tf_var.name): special[tf_var.name] = tf_var
-            if ('resnet_v1_50/logits' in tf_var.name):
+            if ('fc_resnet' in tf_var.name):
                 special[tf_var.name] = tf_var
-
             if not ('Bias' in tf_var.name):
                 if use_cnn and ( not ('vgg_16' in tf_var.name) or tune_vgg) and (not resnet_cnn or not('resnet_v1_50' in tf_var.name)):
                     if 'vgg_16' in tf_var.name : print('Added vgg weights for training')
@@ -278,7 +276,7 @@ class PointerNetwork(object):
                     reg_loss += tf.nn.l2_loss(tf_var)
         
         loss += reg * reg_loss if FLAGS.dp < 0.0 else 0.0
-        tf.summary.scalar('train_loss', loss) # Sanya
+        tf.summary.scalar('train_loss', loss) 
 
         test_loss = 0.0
         for output, target, weight in zip(self.predictions, self.decoder_targets, self.target_weights):
