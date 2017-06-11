@@ -1,9 +1,9 @@
-import numpy as np
+mport numpy as np
 import scipy.misc
 import scipy.ndimage
 import os
 import sys
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import multiprocessing
 import glob
@@ -12,11 +12,11 @@ sys.path.append('utils/')
 import fitness_vectorized as fv
 
 
-NUM_TEST = 512
-NUM_TRAIN = 6400
-NUM_VAL = 1024
+NUM_TEST = 512#1024#512
+NUM_TRAIN = 2560 #256#10240
+NUM_VAL = 512 #1024
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
-DIMS=(64, 64, 3)
+DIMS=(224, 224, 3)
 
 TRAIN_DIR = "data/data_train"
 VAL_DIR = "data/data_val"
@@ -27,10 +27,11 @@ _R_MEAN = 123.68
 _G_MEAN = 116.78
 _B_MEAN = 103.94
 
-POOL_SIZE = 8		
+POOL_SIZE = 8
 
 categories = sorted([os.path.basename(cat) for cat in glob.glob(TRAIN_DIR + "/*")])
 NUM_CATS = len(categories)
+print("NUMBER OF CATEGORIES ", NUM_CATS)
 # For now, assert that this is evenly divisible. 
 #assert NUM_TEST % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_TRAIN)
 #assert NUM_VAL % NUM_CATS == 0, "{0:d} does not evenly divide {1:d}".format(NUM_CATS, NUM_VAL)
@@ -38,7 +39,7 @@ NUM_CATS = len(categories)
 
 
 
-def getData(puzzle_height, puzzle_width, use_cnn=False):
+def getData(puzzle_height, puzzle_width, use_cnn=False, jiggle=True, image_dim=64):
 	'''
 	returns 
 	data:   data['val'] = (x_val, onehot_cat, y_val, val_seq_len)
@@ -49,6 +50,8 @@ def getData(puzzle_height, puzzle_width, use_cnn=False):
 			seq_len = [batch_size, ] # for each image in that batch, the number of pieces it is cut int
 	'''
 	H, W = puzzle_height, puzzle_width
+	if image_dim: DIMS=(image_dim, image_dim, 3)
+	if not jiggle: fv.JIGGLE_ROOM = 0
 	train = loadImages(TRAIN_DIR, NUM_TRAIN, H, W, dims=DIMS)
 	val = loadImages(VAL_DIR, NUM_VAL, H, W, dims=DIMS)
 	test = loadImages(TEST_DIR, NUM_TEST, H, W, dims=DIMS)
@@ -64,24 +67,33 @@ def getData(puzzle_height, puzzle_width, use_cnn=False):
     }
 
 def getReshapedImages(args):
-	imgList, H, W, dims = args
+	imgList, H, W, dims, fnames  = args
 	new_list = []
 	for i, img in enumerate(imgList):
 		large_width, large_height, large_depth = H * (dims[0] + fv.JIGGLE_ROOM), W * (dims[1] + fv.JIGGLE_ROOM), dims[2]  # modifying this to allow for jiggling
 		resized_img = np.array(resize(img, (large_width, large_height, large_depth), preserve_range=True, mode='reflect'))#.astype(dtype=np.uint8)
 		new_list.append(resized_img)
 		#print(np.shape(resized_img))
-	return new_list
+	return new_list, fnames
 
 def readImg(filename):
-	return scipy.ndimage.imread(filename)
+	return scipy.ndimage.imread(filename), filename
 
 def shuffleAndReshapeData(args, keep_shape=True):
 	'''
 	Splits and preprocessed dimension-formatted data into 
 	train, test and validation data. 
 	'''
-	X, cats, fnames = args
+	X, fnames = args
+	print(fnames.shape, " The shape of filenames")
+	cats = np.array([fname.split("/")[-2] for fname in fnames])
+	unique = set(cats)
+	cats_onehot_shuff = np.zeros((len(fnames), NUM_CATS))
+	for ind, category in enumerate(unique):
+		locs = np.where(cats == category)
+		print(locs)
+		cats_onehot_shuff[locs, ind] = 1.0
+		
 	N, L, W, H, C = X.shape 		# TODO: Check the updated shape. 
 	np.random.seed(231)
 
@@ -94,11 +106,8 @@ def shuffleAndReshapeData(args, keep_shape=True):
 	X_shuff = X[idx_shuff]
 	fnames_shuff = fnames[idx_shuff]
 
-	cats_onehot_shuff = None
-	if len(cats) > 0: 
-		cats_shuff = cats[idx_shuff]
-		cats_onehot_shuff = np.where(cats_shuff[:,np.newaxis] == categories, 1, 0)
-
+	#if len(cats) > 0: 
+	#	cats_shuff = cats[idx_shuff]
 	for i in np.arange(X_shuff.shape[0]):
 		np.random.shuffle(y_shuff[i])
 		X_shuff[i,:] = X_shuff[i,y_shuff[i]]
@@ -107,7 +116,7 @@ def shuffleAndReshapeData(args, keep_shape=True):
 	if not keep_shape:
 		X = X.reshape(N, L, -1)		# TODO: Update once verified. 
 		print("Reshaped to new shape {0}.".format(X.shape))
-	del X
+	
 	y_onehot_shuff = np.where(y_shuff[:,:,np.newaxis] == np.arange(L), 1, 0)
 	seq = np.ones((len(X_shuff))) * L
 	
@@ -138,7 +147,7 @@ def loadImages(directory, N, H, W, dims=(32,32,3)):
 		#print(num_per_cat)
 		# Seems more efficient to iterate over category dirs and get exact number
 		# of imgs per category. Hence, not using glob to load all imgs to disk.  
-		for dirname in sorted(os.listdir(directory)):
+		for dirname in sorted(os.listdir(directory))[:NUM_CATS]:
 			path = os.path.join(directory, dirname)
 			filenames = [os.path.join(path, fname) for fname in sorted(os.listdir(path))]
 
@@ -148,18 +157,23 @@ def loadImages(directory, N, H, W, dims=(32,32,3)):
 	
 	# assert len(img_names) - N == 0, "len(imgs)={0:d} not equal to N={0:d}".format(len(img_names), N)
 	pool = multiprocessing.Pool(POOL_SIZE)
-	imgs = pool.map(readImg, img_names)
+	info = pool.map(readImg, img_names)
+	imgs, img_names = [], []
+	for tup in info:
+		imgs.append(tup[0])
+		img_names.append(tup[1])
 
 	print("Resizing images.")
 	num_files = int(np.ceil(len(imgs) / POOL_SIZE))
-	pairs = [(imgs[num_files * i : num_files * (i + 1)], H, W, dims) for i in range(POOL_SIZE)]
+	pairs = [(imgs[num_files * i : num_files * (i + 1)], H, W, dims, img_names[num_files * i : num_files * (i + 1)]) for i in range(POOL_SIZE)]
 	results = pool.map(getReshapedImages, pairs)
 
 	new_list = []
+	img_names = []
 	for result in results:
-		new_list.extend(result)
-	del results
-        #prinddt(np.shape(new_list))
+		new_list.extend(result[0])
+		img_names.extend(result[1])
+	#print(np.shape(new_list))
 	print("Normalizing Images")
 	imgs = np.array(new_list)
 	#imgs -= np.mean(imgs, axis = 0)
@@ -172,10 +186,10 @@ def loadImages(directory, N, H, W, dims=(32,32,3)):
 		img[:, :, 2] -= _B_MEAN
 		#print(np.shape(img))
 		X.append(np.array(fv.splitImage(H, W, img, dims)))
-	del imgs
+
 	print("Loaded %d Images from %s" % (len(X), directory))
 	# assert(len(X) == N)
-	return np.array(X), np.array(cats), np.array(fnames)
+	return np.array(X), np.array(img_names)
 
 ######### TESTING ###############
 # data = getData(3, 3)
