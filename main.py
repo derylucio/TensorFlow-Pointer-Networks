@@ -1,4 +1,4 @@
-"""Implementation of Pointer networks: http://arxiv.org/pdf/1506.03134v1.pdf.
+"""Implementation of Pointer networks: http://arxiv.org/pdf/1506.03134v1.pdf. [L]
 """
 
 from __future__ import absolute_import, division, print_function
@@ -12,7 +12,8 @@ from dataset import DataGenerator
 from pointer import pointer_decoder
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.contrib.rnn.python.ops import core_rnn_cell_impl
-from cnn import CNN_FeatureExtractor
+import cnn 
+import cnn_resnet
 import random
 import numpy as np
 import os
@@ -20,6 +21,7 @@ import sys
 sys.path.append("utils/")
 from evaluation import NeighborAccuracy, directAccuracy  
 RAND_SEED = 1234
+FC_DIM_RESNET = 1000 
 CKPT_DIR = "model_ckpts"
 
 flags = tf.app.flags
@@ -41,6 +43,7 @@ flags.DEFINE_float('lr_decay', 0.95, 'the decay rate of the learning rate') # HY
 flags.DEFINE_integer('lr_decay_period', 100, 'the number of iterations after which to decay learning rate.') # HYPER-PARAMS
 flags.DEFINE_float('reg', 0.001, 'regularization on model parameters') # HYPER-PARAMS
 flags.DEFINE_bool('use_cnn', True, 'Whether to use CNN or MLP for input dimensionality reduction') 
+flags.DEFINE_bool('resnet_cnn', False, 'Whether to use resnet model of CNN.') 
 flags.DEFINE_bool('load_from_ckpts', False, 'Whether to load weights from checkpoints')
 flags.DEFINE_bool('tune_vgg', False, "Whether to finetune vgg")
 flags.DEFINE_bool('bidirect', True, "Whether to use a bidirectional rnn for encoder")
@@ -53,7 +56,7 @@ flags.DEFINE_bool('test_mode', False, 'whether or not we are testing as opposed 
 
 class PointerNetwork(object):
     def __init__(self, max_len, input_size, size, num_layers, max_gradient_norm, batch_size, learning_rate,
-                 learning_rate_decay_factor, inter_dim, fc_dim, use_cnn, image_dim, vgg_dim, bidirect):
+                 learning_rate_decay_factor, inter_dim, fc_dim, use_cnn, resnet_cnn, image_dim, vgg_dim, bidirect):
         """Create the network. A simplified network that handles only sorting.
         
         Args:
@@ -117,14 +120,21 @@ class PointerNetwork(object):
         # Neeed to pass both encode inputs and everything through a dense layer.
         if use_cnn:
             # Encoder 
-            cnn_f_extractor = CNN_FeatureExtractor()
+            if resnet_cnn:
+                cnn_f_extractor = cnn_resnet.CNN_FeatureExtractor()
+            else: 
+                cnn_f_extractor = cnn.CNN_FeatureExtractor()
             all_inps = []
             num_encoder = len(self.encoder_inputs)
             all_inps.extend(self.encoder_inputs)
             all_inps.extend(self.decoder_inputs_updated)
             stacked_ins = tf.stack(all_inps)
             stacked_ins = tf.reshape(stacked_ins, [-1, image_dim, image_dim, 3])
-            inputfn, features = cnn_f_extractor.getCNNFEatures(stacked_ins, vgg_dim, fc_dim, self.init)
+            if resnet_cnn:
+                inputfn, features = cnn_f_extractor.getCNNFeatures(stacked_ins, fc_dim, self.init)
+            else: 
+                inputfn, features = cnn_f_extractor.getCNNFeatures(stacked_ins, vgg_dim, fc_dim, self.init)
+
             self.print_out = features[0]
             self.inputfn = inputfn
             features = tf.reshape(features, [-1, batch_size, fc_dim])
@@ -242,7 +252,7 @@ class PointerNetwork(object):
             return tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate)
 
 
-    def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, model_str, load_frm_ckpts, tune_vgg=False):
+    def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, resnet_cnn, model_str, load_frm_ckpts, tune_vgg=False):
 
         loss = 0.0
         for output, target, weight in zip(self.outputs, self.decoder_targets, self.target_weights):
@@ -251,14 +261,16 @@ class PointerNetwork(object):
         reg_loss = 0
         var_list = []
         special = {} 
-        #to_load = {}
         for tf_var in tf.trainable_variables():
             #print("trainable : ", tf_var.name)
             #if "Variable_" not in tf_var.name: to_load[tf_var.name] = tf_var
             if("fc_vgg" in tf_var.name): special[tf_var.name] = tf_var
+            if ('fc_resnet' in tf_var.name):
+                special[tf_var.name] = tf_var
             if not ('Bias' in tf_var.name):
-                if use_cnn and ( not ('vgg_16' in tf_var.name) or tune_vgg):
+                if use_cnn and ( not ('vgg_16' in tf_var.name) or tune_vgg) and (not resnet_cnn or not('resnet_v1_50' in tf_var.name)):
                     if 'vgg_16' in tf_var.name : print('Added vgg weights for training')
+                    if 'resnet_v1_50' in tf_var.name: print ('Adding resnet weight')
                     var_list.append(tf_var)
                     reg_loss += tf.nn.l2_loss(tf_var)
                 else:
@@ -266,7 +278,7 @@ class PointerNetwork(object):
                     reg_loss += tf.nn.l2_loss(tf_var)
         
         loss += reg * reg_loss if FLAGS.dp < 0.0 else 0.0
-        tf.summary.scalar('train_loss', loss) # Sanya
+        tf.summary.scalar('train_loss', loss) 
 
         test_loss = 0.0
         for output, target, weight in zip(self.predictions, self.decoder_targets, self.target_weights):
@@ -288,6 +300,7 @@ class PointerNetwork(object):
         correct_order = 0
         all_order = 0
         epoch_data = []
+        #model_str = 'CNN_max_steps4_rnn_size-400_learning_rate-0.0001_fc_dim-256_num-glimpses-0_reg-0.001_optimizer-Adam_bidirect-True_cell-type-GRU_num_layers-2_tuneVGG_used-attn-one-hot'
         ckpt_file = CKPT_DIR + "/" + model_str + "/" + model_str
         specials_file = CKPT_DIR + "/" + model_str + "/specials"
         saver = tf.train.Saver()
@@ -337,6 +350,8 @@ class PointerNetwork(object):
 
                 test_loss_value, summary = sess.run([test_loss, merged], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
                 #test_writer.add_summary(summary, i)
+                test_loss_value, summary, indices = sess.run([test_loss, merged, self.cps], feed_dict=feed_dict) #0.9 * test_loss_value + 0.1 * sess.run(test_loss, feed_dict=feed_dict)             
+                test_writer.add_summary(summary, i)
                 if i % 1 == 0:
                     print("Test: ", test_loss_value)
 
@@ -381,6 +396,7 @@ def getModelStr():
     model_str += "_reg-" + str(FLAGS.reg) if FLAGS.dp < 0.0 else "_dp-" + str(FLAGS.dp)
     model_str += "_optimizer-" + FLAGS.optimizer + "_bidirect-" +  str(FLAGS.bidirect) + "_cell-type-" + FLAGS.cell_type + "_num_layers-" + str(FLAGS.num_layers)
     if FLAGS.tune_vgg: model_str += '_tuneVGG'
+    if FLAGS.resnet_cnn: model_str += '_resnetCNN'
     if FLAGS.encoder_attn_1hot: model_str += '_used-attn-one-hot'
     return model_str
 

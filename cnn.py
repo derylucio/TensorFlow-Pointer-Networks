@@ -1,18 +1,3 @@
-# from datasets import dataset_utils
-# import tensorflow as tf
-
-# url = "http://download.tensorflow.org/models/vgg_16_2016_08_28.tar.gz"
-
-# # Specify where you want to download the model to
-# checkpoints_dir = "../ckpts"
-
-
-# if not tf.gfile.Exists(checkpoints_dir):
-#     tf.gfile.MakeDirs(checkpoints_dir)
-
-# dataset_utils.download_and_uncompress_tarball(url, checkpoints_dir)
-
-
 import tensorflow as tf
 import os
 import vgg
@@ -25,17 +10,11 @@ class  CNN_FeatureExtractor(object):
 		self.checkpoints_dir = "ckpts"
 		self.ckpt_name = 'vgg_16.ckpt' 
 
-	def getCNNFEatures(self, input_tensor, fc_dim, out_dim, fc_initializer, use_full=False):
+	def getCNNFeatures(self, input_tensor, fc_dim, out_dim, fc_initializer, use_full=False):
 		graph = tf.Graph()
 
 		with graph.as_default():
-			#vgg = tf.contrib.slim.nets.vgg
 
-			
-			# if get_inputfn:
-			# 	with slim.arg_scope(vgg.vgg_arg_scope(), reuse=True):
-			# 		logits, end_points = vgg.vgg_16(input_tensor, is_training=False)	 # might want to change this once we decide to finetune
-			# else:
 			with slim.arg_scope(vgg.vgg_arg_scope()):
 				logits, end_points = vgg.vgg_16(input_tensor, is_training=False)
 		model_path = os.path.join(self.checkpoints_dir, self.ckpt_name)
