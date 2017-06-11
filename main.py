@@ -280,7 +280,7 @@ class PointerNetwork(object):
         nrows = 1 + seqlen
         ncols = seqlen
         print(ncols, nrows)
-        fig, ax = plt.subplots(nrows, ncols, squeeze=False)
+        fig, ax = plt.subplots(nrows, ncols, figsize=(20, 20),  squeeze=False)
         for i in range(nrows):
             for t in range(ncols):
                 print(i, t)
@@ -294,10 +294,10 @@ class PointerNetwork(object):
                 ax[i, t].imshow(saliencies[(i - 1)*seqlen +  t] / 255.0, cmap=plt.cm.hot)
                 ax[i, t].axis('off')
             
-            plt.gcf().set_size_inches(10, 4)
+            #plt.gcf().set_size_inches(10, 4)
         
         save_fname = fname.replace("/", ".")
-        plt.savefig("saliencies/" + str(idx) + save_fname)
+        plt.savefig("saliencies/" + str(idx) + save_fname + ".png")
     
     def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, model_str, load_frm_ckpts, tune_vgg=False):
         loss = 0.0
@@ -415,7 +415,7 @@ class PointerNetwork(object):
                         print("Grads shape ", np.shape(grad))
                         saliency = np.max(grad, axis=3) #.reshape(grad.shape[:-1])
                         print("Saliency Shape", saliency.shape)
-                        saliencies.append(saliency) # Saliencies for the full batch.
+                        saliencies.extend(saliency) # Saliencies for the full batch.
                     self.save_saliency(saliencies, i)
                 
                 test_loss_value, summary, indices = sess.run([test_loss, merged, self.cps], feed_dict=feed_dict)
