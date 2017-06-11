@@ -107,6 +107,8 @@ class PointerNetwork(object):
         self.decoder_targets = []
         self.target_weights = []
         self.fnames = []
+        self.imgs = []
+
         for i in range(max_len):
             i_size = [batch_size, input_size] if not use_cnn else [batch_size, image_dim, image_dim, 3]
             self.encoder_inputs.append(tf.placeholder(
@@ -121,9 +123,6 @@ class PointerNetwork(object):
             self.target_weights.append(tf.placeholder(
                 tf.float32, [batch_size, 1], name="TargetWeight%d" % i))
         
-        #for i in range(batch_size):
-        #    self.fnames.append(tf.placeholder(tf.string, name="ImageFilename%d" % i))
-
         # Encoder
         trainable_init_state = tf.Variable(tf.zeros(i_size), "trainable_init_state")
         self.decoder_inputs_updated  = [trainable_init_state] + self.decoder_inputs
@@ -266,11 +265,31 @@ class PointerNetwork(object):
             return tf.train.GradientDescentOptimizer(learning_rate=self.learning_rate)
 
 
-    def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, model_str, load_frm_ckpts, tune_vgg=False):
+    def save_saliency(self, saliencies):
+        print(len(self.encoder_inputs))
+        imgs = [chip_batch[0] for chip_batch in self.encoder_inputs]
+        print("Chip Size: ", imgs[0].shape)
+        seqlen = len(saliencies)
 
+        for i in range(seqlen):
+            plt.subplot(2, seqlen, i + 1)
+            plt.imshow(imgs[i])
+            plt.axis('off')
+            plt.title("Image Chip " + str(i))
+
+            plt.subplot(2, seqlen, seqlen + i + 1)
+            plt.title("Saliency " + str(i))
+            plt.imshow(saliencies[0][i], cmap=plt.cm.hot)
+            plt.axis('off')
+            plt.gcf().set_size_inches(10, 4)
+        save_fname = fname.replace("/", ".")
+        plt.savefig("saliencies/" + save_fname)
+    
+    def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, model_str, load_frm_ckpts, tune_vgg=False):
         loss = 0.0
         for output, target, weight in zip(self.outputs, self.decoder_targets, self.target_weights):
             loss += tf.nn.softmax_cross_entropy_with_logits(logits=output, labels=target) * weight
+
         loss = tf.reduce_mean(loss) / (FLAGS.max_steps  + 1)
         reg_loss = 0
         var_list = []
@@ -290,7 +309,7 @@ class PointerNetwork(object):
         tf.summary.scalar('train_loss', loss) # Sanya
         
         test_loss = 0.0
-        for output, target, weight, fname in zip(self.predictions, self.decoder_targets, self.target_weights, self.fnames):
+        for output, target, weight in zip(self.predictions, self.decoder_targets, self.target_weights):
             test_loss += tf.nn.softmax_cross_entropy_with_logits(logits=output, labels=target) * weight
 
         test_loss = tf.reduce_mean(test_loss) / (FLAGS.max_steps  + 1)
@@ -355,47 +374,36 @@ class PointerNetwork(object):
                 predictions, targets = sess.run([self.predictions, self.decoder_targets], feed_dict=feed_dict)   
 
                 # SALIENCY START
-                print("Saliency in Test")
-                fname = self.fnames[0] # Only use first file. 
-                print("Filename:,", fname)
-                target_idx = np.argmax(targets, axis=0)
-                is_cached = False
-                img_cache = []
                 grads = []
-                for i, idx in enumerate(target_idx[0]):
-                    if idx == 0: continue
-                    if not is_cached:
-                        is_cached = True
-                        img = dg.readImg(fname)
-                        args = ([img], FLAGS.puzzle_height, FLAGS.puzzle_width, (FLAGS.image_dim, FLAGS.image_dim, 3))
-                        img = dg.getReshapedImages(args)[0]
-
-                        args = (FLAGS.puzzle_height, FLAGS.puzzle_width, img, (FLAGS.image_dim, FLAGS.image_dim, 3))
-                        img_cache = np.array(fv.splitImage(*args))
-                    
-                    idx = idx - 1
-                    img_chip = img_cache[idx]
-                    # Just a test below.
-                    #print(self.encoder_inputs[idx].shape)
-                    grad = tf.gradients(np.sum(self.outputs[idx], axis=-1), self.encoder_inputs[idx]) 
-                    # TODO: Find way to add img_chip instead of encoder input
-                    grads.append(grad)
+                show_saliency = False
+                if show_saliency and i % 20 == 0:
+                    print("Saliency in Test")
+                    fname = self.fnames[0] # Only use first file. 
+                    print("Filename: ", fname)
+                    target_idx = np.argmax(targets, axis=0)[0]
+                    for i, idx in enumerate(target_idx): # e.g. [4, 0, 1, 3, 2]
+                        if idx == 0: continue
+                        idx-=1
+                        #print("Self Outputs Idx", self.outputs[idx].get_shape(), self.encoder_inputs[idx].get_shape())
+                        grad = tf.gradients(np.sum(self.outputs[idx], axis=-1), self.encoder_inputs[idx]) # Get first batch. 
+                        #print("Grads Shape ", grad[0].get_shape())
+                        grads.append(grad)
 
                 test_loss_value, summary, indices, grad_arr = sess.run([test_loss, merged, self.cps, grads], feed_dict=feed_dict)
-                saliencies = []
-                for i in np.arange(len(grads)):
-                    print(len(grad_arr))
-                    grad_arr[i] = np.abs(grad_arr[i])
-                    saliencies.append(np.max(grad_arr[i], axis=-1).reshape(grad_arr[i][0].shape[:-1]))
-                save_saliency(saliencies, self.fnames[0])
                 
+                if show_saliency and i % 20 == 0:
+                    saliencies = []
+                    for grad in grads:
+                        grad = np.abs(grad)
+                        saliency = np.max(grad, axis=-1).reshape(grad[0].shape[:-1])
+                        saliencies.append(saliency) # Saliencies for the full batch.
+                    self.save_saliency(saliencies)
                 # SALIENCY END
- 
+                    
                 test_writer.add_summary(summary, i)
                 test_losses.append(test_loss_value)
                 if i % 1 == 0:
                     print("Test: ", test_loss_value)
-
                 
                 predictions_order = np.concatenate([np.expand_dims(prediction, 0) for prediction in predictions])
                 #print("Here are the predictions", np.transpose(predictions_order, (1, 0, 2))[0])
@@ -433,73 +441,6 @@ def getModelStr():
     if FLAGS.resnet_cnn: model_str += '_resnetCNN'
     if FLAGS.encoder_attn_1hot: model_str += '_used-attn-one-hot'
     return model_str
-
-def compute_saliency_maps(X, y, model):
-    """
-    Compute a class saliency map using the model for images X and labels y.
-
-    Input:
-    - X: Input images, numpy array of shape (N, H, W, 3)
-    - y: Labels for X, numpy of shape (N,)
-    - model: A model that will be used to compute the saliency map.
-
-    Returns:
-    - saliency: A numpy array of shape (N, H, W) giving the saliency maps for the
-    input images.
-    """
-    correct_scores = tf.gather_nd(model.classifier,
-                                  tf.stack((tf.range(X.shape[0]), model.labels), axis=1))
-    grads = tf.gradients(correct_scores, model.image)
-    gradient = sess.run(grads, feed_dict={model.image:X, model.labels:y})
-    gradient = np.abs(gradient)
-    saliency = np.max(gradient, axis=-1).reshape(gradient[0].shape[:-1])
-    return saliency
-
-def save_saliency(saliencies, fname):
-    # Hacky. 
-    img = dg.readImg(fname)
-    args = ([img], FLAGS.puzzle_height, FLAGS.puzzle_width, (FLAGS.image_dim, FLAGS.image_dim, 3))
-    img = dg.getReshapedImages(args)[0]
-
-    args = (FLAGS.puzzle_height, FLAGS.puzzle_width, img, (FLAGS.image_dim, FLAGS.image_dim, 3))
-    img_cache = np.array(fv.splitImage(*args))
-
-    mask = np.array([0])
-    ym = [0]
-    seqlen = len(saliencies)
-    print(seqlen)
-    for i in range(seqlen):
-        plt.subplot(2, seqlen, i + 1)
-        #plt.imshow(deprocess_image(Xm[i]))
-        plt.axis('off')
-        #plt.title(class_names[ym[i]])
-        plt.subplot(2, seqlen, mask.size + i + 1)
-        plt.title(mask[i])
-        print(saliencies[i].shape)
-        plt.imshow(saliencies[0][i], cmap=plt.cm.hot)
-        plt.axis('off')
-        plt.gcf().set_size_inches(10, 4)
-    plt.savefig(i + ".png")
-
-def show_saliency_maps(X, y, mask):
-    mask = np.asarray(mask)
-    Xm = X[mask]
-    ym = y[mask]
-
-    saliency = compute_saliency_maps(Xm, ym, model)
-
-    for i in range(mask.size):
-        plt.subplot(2, mask.size, i + 1)
-        plt.imshow(deprocess_image(Xm[i]))
-        plt.axis('off')
-        plt.title(class_names[ym[i]])
-        plt.subplot(2, mask.size, mask.size + i + 1)
-        plt.title(mask[i])
-        plt.imshow(saliency[i], cmap=plt.cm.hot)
-        plt.axis('off')
-        plt.gcf().set_size_inches(10, 4)
-    plt.savefig(i + ".png")
-
 
 if __name__ == "__main__":
     # TODO: replace other with params

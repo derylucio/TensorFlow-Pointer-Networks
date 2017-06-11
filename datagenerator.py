@@ -12,9 +12,9 @@ sys.path.append('utils/')
 import fitness_vectorized as fv
 
 
-NUM_TEST = 256#512
-NUM_TRAIN = 256#1280 #4096 #10240
-NUM_VAL = 256#1024
+NUM_TEST = 512
+NUM_TRAIN = 1280 #4096 #10240
+NUM_VAL = 1024
 NUM_DATA = NUM_TEST + NUM_TRAIN + NUM_VAL
 DIMS=(64, 64, 3)
 
@@ -68,7 +68,7 @@ def getReshapedImages(args):
     new_list = []
     for i, img in enumerate(imgList):
         large_width, large_height, large_depth = H * (dims[0] + fv.JIGGLE_ROOM), W * (dims[1] + fv.JIGGLE_ROOM), dims[2]  # modifying this to allow for jiggling
-        resized_img = np.array(resize(img, (large_width, large_height, large_depth), preserve_range=True, mode='reflect'))#.astype(dtype=np.uint8)
+        resized_img = np.array(resize(img, (large_width, large_height, large_depth), preserve_range=False, mode='reflect'))#.astype(dtype=np.uint8)
         new_list.append(resized_img)
         #print(np.shape(resized_img))
     return new_list
