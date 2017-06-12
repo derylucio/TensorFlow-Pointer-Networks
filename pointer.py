@@ -146,22 +146,15 @@ def pointer_decoder(decoder_inputs, initial_state, attention_states, cell,
                     output = attention(new_state)
                     
             if feed_prev:
-                if len(curr_preds) > 0:
-                    temp_out  = tf.Variable(tf.zeros(output.get_shape()), trainable=False)
-                    #temp_out = temp_out.assign
-                    temp_out = temp_out.assign(output)
-                    #print("temp shape ", temp_out.get_shape())
-                    for ind, max_ind in enumerate(curr_preds):
-                        #print('Here', i, ind) 
-                        rep_first_indices = tf.range(batch_size)
-                        inds = tf.stack([rep_first_indices, max_ind], axis=1)
-                        #print("inds shape", inds.get_shape())
-                        to_assign = tf.ones((temp_out.get_shape()[0], ))*(-sys.maxsize)
-                        to_assign = tf.cast(to_assign, tf.float32)
-                        #print("to ass shape " , to_assign.get_shape())
-                        temp_out = tf.scatter_nd_update(temp_out, inds, to_assign)
-                    #print("after tempout", temp_out.get_shape())
-                    output = temp_out #.read_value() 
+                temp_out  = tf.Variable(tf.zeros(output.get_shape()), trainable=False)
+                temp_out = temp_out.assign(output)
+                for ind, max_ind in enumerate(curr_preds):
+                    rep_first_indices = tf.range(batch_size)
+                    inds = tf.stack([rep_first_indices, max_ind], axis=1)
+                    to_assign = tf.ones((temp_out.get_shape()[0], ))*(-sys.maxsize)
+                    to_assign = tf.cast(to_assign, tf.float32)
+                    temp_out = tf.scatter_nd_update(temp_out, inds, to_assign)
+                output = temp_out #.read_value() 
                 max_inds = tf.cast(tf.argmax(output, 1), tf.int32) 
                 curr_preds.append(max_inds)
             

@@ -3,20 +3,22 @@ from __future__ import absolute_import, division, print_function
 import numpy as np
 import sys
 
-from datagenerator import getData
+from datagenerator_temp import getData
 sys.path.append('utils/')
 from fitness_vectorized import JIGGLE_ROOM
 
 class DataGenerator(object):
 
-    def __init__(self, puzzle_height, puzzle_width, input_dim, use_cnn, image_dim):
+    def __init__(self, puzzle_height, puzzle_width, input_dim, use_cnn, image_dim, test_mode=False):
         self.puzzle_width = puzzle_width
         self.puzzle_height = puzzle_height
         self.use_cnn = use_cnn
         self.image_dim = image_dim
         self.data = getData(puzzle_height, puzzle_width, use_cnn=self.use_cnn)
+        self.test_mode = test_mode
         self.data['train'] = (self.data['train'][0], np.argmax( self.data['train'][1] , axis = 2), self.data['train'][2], self.data['train'][4])
         self.data['val'] = (self.data['val'][0], np.argmax(self.data['val'][1] , axis=2), self.data['val'][2], self.data['val'][4])
+        self.data['test'] = (self.data['test'][0], np.argmax(self.data['test'][1] , axis=2), self.data['test'][2], self.data['test'][3], self.data['test'][4])
         self.input_dim = input_dim
         self.curr_train_pos = 0
         self.curr_test_pos = 0
@@ -31,9 +33,6 @@ class DataGenerator(object):
         # In inference we feed an unordered sequence again
         decoder_input_batch = []
 
-        # SANYA: Corresponding filenames (TEST).
-        reader_fnames_batch = []
-
         # Ordered sequence where one hot vector encodes position in the input array
         writer_outputs_batch = []
         size = [batch_size, self.input_dim] if not self.use_cnn else [batch_size, self.image_dim, self.image_dim, 3]
@@ -41,15 +40,17 @@ class DataGenerator(object):
             reader_input_batch.append(np.zeros(size))
             decoder_input_batch.append(np.zeros(size))
         
-        for _ in range(batch_size):
-            reader_fnames_batch.append("")
-
         for _ in range(N + 1):
             #decoder_input_batch.append(np.zeros(size))
             writer_outputs_batch.append(np.zeros([batch_size, N + 1]))
 
         mode_string = 'train' if train_mode else 'val'
-        x, y, _, fnames = self.data[mode_string]
+        if self.test_mode and not train_mode:
+            mode_string = 'test'
+        if mode_string is not 'test' :
+            x, y, _, fnames = self.data[mode_string]
+        else:
+            x, y, _, _, fnames = self.data[mode_string]
         if train_mode:
             self.curr_train_pos += 1
             if batch_size*self.curr_train_pos >= len(x): self.curr_train_pos = 0
@@ -74,7 +75,6 @@ class DataGenerator(object):
         #print("After reshape", np.shape(x))
 
         for b in range(batch_size):
-            reader_fnames_batch[b] = fnames[b]
             for i in range(N):
                 reader_input_batch[i][b] = x[b][i]
                 if train_mode:
@@ -86,7 +86,7 @@ class DataGenerator(object):
 
             # Points to the stop symbol
             writer_outputs_batch[N][b, 0] = 1.0
-        return reader_input_batch, decoder_input_batch, writer_outputs_batch, reader_fnames_batch
+        return reader_input_batch, decoder_input_batch, writer_outputs_batch, fnames
     
 #datagen = DataGenerator(2, 2, 12288, False, 64)
 #r_in, d_in, r_out  = datagen.next_batch(2, 4, train_mode=False)
