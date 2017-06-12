@@ -291,7 +291,7 @@ class PointerNetwork(object):
                 ax[i, t].imshow(saliencies[(i - 1)*seqlen +  t], cmap=plt.cm.hot)
                 ax[i, t].axis('off')
         
-        save_fname = fname.replace("/", ".")
+        save_fname = os.path.basename(fname) + getModelStr() #fname.replace("/", ".")
         plt.savefig("saliencies/" + str(idx) + "-" + save_fname + ".png")
     
     def step(self, optim, nb_epochs, lr_decay_period, reg, use_cnn, model_str, load_frm_ckpts, tune_vgg=False):
@@ -390,8 +390,6 @@ class PointerNetwork(object):
                     for ind in targets:
                         if ind == 0: continue
                         ind -= 1
-                        assert(ind > -1 and ind < 4)
-                    #for ind in range(FLAGS.max_steps):
                         targ = tf.reduce_sum(self.outputs[ind][0, :])
                         grad = tf.gradients(targ, inps)
                         grad = [grad[j][0] for j in range(FLAGS.max_steps)]
